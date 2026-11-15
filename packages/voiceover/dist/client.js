@@ -391,6 +391,7 @@ window.__ModuleLoader__.load({
         lineHeight: '22px',
       },
       stripAudio: { display: 'none' },
+      stripFail: { padding: '4px 8px', fontSize: FONT_META, color: 'var(--dsw-alias-state-error-primary)' },
       stripCue: {
         fontSize: FONT,
         lineHeight: 1.5,
@@ -1131,7 +1132,8 @@ window.__ModuleLoader__.load({
         }
       }
 
-      return h(
+      try {
+        return h(
         'div',
         { style: S.strip, role: 'group', 'aria-label': tr('group.label') },
         h('style', { key: 'vo-strip' }, FOCUS_CSS),
@@ -1182,7 +1184,11 @@ window.__ModuleLoader__.load({
                 setElapsed(null)
               },
             }),
-      )
+        )
+      } catch (error) {
+        // Never let the host draw its error placeholder in place of progress.
+        return h('div', { style: S.stripFail }, `voiceover: ${String((error && error.message) || error)}`)
+      }
     }
 
 
