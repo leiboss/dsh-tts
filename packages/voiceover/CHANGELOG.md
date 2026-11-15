@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.8
+
+- **The strip plays the whole book.** It mounted one chapter and stopped when
+  that chapter ended. It now walks the playable chapters in order, advances on
+  `ended`, shows where it is (`ch-02 · 2/5`), cycles playback speed
+  (1×/1.25×/1.5×/2×), and remembers the listening position per project: a
+  reload continues where the listener stopped, without auto-playing.
+
 ## 0.3.7
 
 - **The strip moved above the composer, full width.** 0.3.6 put it in

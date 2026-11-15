@@ -114,7 +114,7 @@ test('formats chapter durations as m:ss', async () => {
   assert.equal(formatDuration(0), '')
 })
 
-test('registers the tool views and the composer dock strip', async () => {
+test('registers the tool views and the composer input dock strip', async () => {
   const client = await loadClient()
   const apply = client.apply as (ctx: unknown) => void
   const registrations: { slot: string; id: string }[] = []
@@ -140,6 +140,58 @@ test('registers the tool views and the composer dock strip', async () => {
     // Ambient session state: one player per Session, full width above the composer.
     { slot: 'conversation.input.dock', id: 'voiceover-progress' },
   ])
+})
+
+test('the strip plays through the whole book, not just the first chapter', async () => {
+  const client = await loadClient()
+  const playableChapters = client.playableChapters as (chapters: unknown[]) => { id: string }[]
+  const nextPlaybackIndex = client.nextPlaybackIndex as (index: number, count: number) => number
+  const nextRate = client.nextRate as (rate: number) => number
+  const storePosition = client.storePosition as (projectId: string, index: number, ms: number) => void
+  const readPosition = client.readPosition as (projectId: string) => { index: number; ms: number } | null
+
+  // Ordered by `order`, and only chapters that actually have audio.
+  const playlist = playableChapters([
+    { id: 'ch-02', order: 2, audioUrl: '/a2' },
+    { id: 'ch-01', order: 1, audioUrl: '/a1' },
+    { id: 'ch-03', order: 3 },
+    { id: 'ch-04', order: 4, audioUrl: '' },
+  ])
+  assert.deepEqual(
+    playlist.map((chapter) => chapter.id),
+    ['ch-01', 'ch-02'],
+  )
+
+  assert.equal(nextPlaybackIndex(-1, 2), 0)
+  assert.equal(nextPlaybackIndex(0, 2), 1)
+  assert.equal(nextPlaybackIndex(1, 2), -1, 'the last chapter ends the book')
+  assert.equal(nextPlaybackIndex(0, 0), -1)
+
+  assert.equal(nextRate(1), 1.25)
+  assert.equal(nextRate(1.5), 2)
+  assert.equal(nextRate(2), 1, 'the cycle wraps')
+
+  // A position survives a reload; unreadable storage must not throw.
+  const store: Record<string, string> = {}
+  const globals = globalThis as unknown as Record<string, unknown>
+  const previous = globals.localStorage
+  globals.localStorage = {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value
+    },
+  }
+  try {
+    storePosition('proj', 1, 12345.6)
+    assert.deepEqual(readPosition('proj'), { index: 1, ms: 12346 })
+    assert.equal(readPosition('other'), null)
+    store['voiceover:pos:broken'] = 'not json'
+    assert.equal(readPosition('broken'), null)
+    storePosition('proj', -1, 10)
+    assert.deepEqual(readPosition('proj'), { index: 1, ms: 12346 }, 'an invalid write is ignored')
+  } finally {
+    globals.localStorage = previous
+  }
 })
 
 test('the result strip mirrors the latest progress and hides when finished', async () => {

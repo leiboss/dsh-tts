@@ -87,7 +87,9 @@ window.__ModuleLoader__.load({
         'action.play': '播放',
         'action.pause': '暂停',
         'strip.total': '共 {time}',
+        'strip.chapter': '{id} · {at}/{total}',
         'action.stop': '停止',
+        'action.speed': '播放速度',
         'action.retry': '重试',
         'action.retryAria': '重跑 {id} {title}',
         'action.rerun': '重跑 {count} 章',
@@ -162,7 +164,9 @@ window.__ModuleLoader__.load({
         'action.play': 'Play',
         'action.pause': 'Pause',
         'strip.total': '{time} total',
+        'strip.chapter': '{id} · {at}/{total}',
         'action.stop': 'Stop',
+        'action.speed': 'Playback speed',
         'action.retry': 'Retry',
         'action.retryAria': 'Retry {id} {title}',
         'action.rerun': 'Retry {count} chapters',
@@ -397,6 +401,18 @@ window.__ModuleLoader__.load({
         lineHeight: '22px',
       },
       stripAudio: { display: 'none' },
+      stripRate: {
+        flex: 'none',
+        minWidth: 36,
+        padding: '0 4px',
+        border: 'none',
+        borderRadius: 6,
+        background: 'transparent',
+        color: 'var(--dsw-alias-label-secondary)',
+        cursor: 'pointer',
+        fontSize: FONT_META,
+        fontVariantNumeric: 'tabular-nums',
+      },
       stripFail: { padding: '4px 8px', fontSize: FONT_META, color: 'var(--dsw-alias-state-error-primary)' },
       stripCue: {
         fontSize: FONT,
@@ -708,6 +724,68 @@ window.__ModuleLoader__.load({
       if (cue.length > 0) return cue
       if (input?.playing === true) return '\u00A0'
       return typeof input?.status === 'string' ? input.status : ''
+    }
+
+    /** Playback speeds the strip cycles through. */
+    const PLAYBACK_RATES = [1, 1.25, 1.5, 2]
+
+    /** Playable chapters in reading order. */
+    function playableChapters(chapters) {
+      if (!Array.isArray(chapters)) return []
+      return chapters
+        .filter((chapter) => typeof chapter?.audioUrl === 'string' && chapter.audioUrl.length > 0)
+        .slice()
+        .sort(
+          (left, right) =>
+            (typeof left?.order === 'number' ? left.order : 0) -
+            (typeof right?.order === 'number' ? right.order : 0),
+        )
+    }
+
+    /** The next book position, or -1 when the last chapter has finished. */
+    function nextPlaybackIndex(index, count) {
+      if (!Number.isInteger(count) || count <= 0) return -1
+      const next = (Number.isInteger(index) ? index : -1) + 1
+      return next >= 0 && next < count ? next : -1
+    }
+
+    /** localStorage key holding one project's listening position. */
+    function positionKey(projectId) {
+      return `voiceover:pos:${String(projectId ?? '')}`
+    }
+
+    /** Stored `{index, ms}`, or null when absent or unreadable. */
+    function readPosition(projectId) {
+      try {
+        if (typeof localStorage === 'undefined') return null
+        const raw = localStorage.getItem(positionKey(projectId))
+        if (typeof raw !== 'string') return null
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return null
+        const index = Number(parsed.index)
+        const ms = Number(parsed.ms)
+        if (!Number.isInteger(index) || index < 0 || !Number.isFinite(ms) || ms <= 0) return null
+        return { index, ms }
+      } catch {
+        return null
+      }
+    }
+
+    /** Persist the listening position; a disabled storage must not break playback. */
+    function storePosition(projectId, index, ms) {
+      try {
+        if (typeof localStorage === 'undefined') return
+        if (!Number.isInteger(index) || index < 0 || !Number.isFinite(ms) || ms <= 0) return
+        localStorage.setItem(positionKey(projectId), JSON.stringify({ index, ms: Math.round(ms) }))
+      } catch {
+        // Private mode or a full quota: leaving the position unremembered is fine.
+      }
+    }
+
+    /** Next speed in the cycle. */
+    function nextRate(rate) {
+      const at = PLAYBACK_RATES.indexOf(rate)
+      return PLAYBACK_RATES[(at + 1) % PLAYBACK_RATES.length] ?? 1
     }
     /** One capability pill. Neutral by default: a fallback is a mode, not a fault. */
     function chip(text) {
@@ -1158,6 +1236,9 @@ window.__ModuleLoader__.load({
       // presses play; binding src to the snapshot would remount the element every
       // couple of seconds and stop playback.
       const [player, setPlayer] = react.useState(null)
+      // Playback speed and the listening position restored from storage.
+      const [speed, setSpeed] = react.useState(1)
+      const [resume, setResume] = react.useState(null)
       const audioRef = (react.useRef ?? (() => ({ current: null })))(null)
 
       react.useEffect(() => {
@@ -1203,8 +1284,8 @@ window.__ModuleLoader__.load({
         })
       }, [sessionId])
       const chapters = Array.isArray(project?.chapters) ? project.chapters : []
-      const chapter =
-        chapters.find((entry) => typeof entry?.audioUrl === 'string' && entry.audioUrl.length > 0) ?? null
+      // The whole book, in order: the strip plays through it, not just ch-01.
+      const playlist = playableChapters(chapters)
 
       react.useEffect(() => {
         if (project === null || player === null) return undefined
@@ -1232,6 +1313,7 @@ window.__ModuleLoader__.load({
         setCue('')
         setElapsed(null)
         setPaused(true)
+        setResume(readPosition(project?.projectId))
       }, [project?.projectId])
 
       if (typeof sessionId !== 'string' || project === null) return null
@@ -1268,11 +1350,30 @@ window.__ModuleLoader__.load({
             ? tr('strip.total', { time: formatDuration(totalMs) })
             : ''
 
+      /**
+       * Start one chapter of the book.
+       *
+       * The signed URL is frozen here, not in render: every poll re-signs it, and
+       * binding src to the snapshot would remount the element and stop playback.
+       */
+      const playAt = (at, startMs = 0) => {
+        const target = playlist[at]
+        if (target === undefined) return
+        setPlayer({
+          id: target.id,
+          url: target.audioUrl,
+          durationMs: target.durationMs,
+          index: at,
+          startMs,
+        })
+      }
+
       const toggle = () => {
         if (player === null) {
-          if (chapter === null) return
-          // Freeze the signed URL here, not in render.
-          setPlayer({ id: chapter.id, url: chapter.audioUrl, durationMs: chapter.durationMs })
+          if (playlist.length === 0) return
+          // Continue where the listener stopped, when that position still exists.
+          const at = resume !== null && resume.index < playlist.length ? resume.index : 0
+          playAt(at, at === resume?.index ? resume.ms : 0)
           return
         }
         const audio = audioRef.current
@@ -1293,9 +1394,7 @@ window.__ModuleLoader__.load({
        */
       const scrub = (event) => {
         if (player === null) {
-          if (chapter !== null) {
-            setPlayer({ id: chapter.id, url: chapter.audioUrl, durationMs: chapter.durationMs })
-          }
+          toggle()
           return
         }
         const audio = audioRef.current
@@ -1324,7 +1423,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: S.stripRow },
-          chapter === null
+          playlist.length === 0
             ? null
             : h(
                 'button',
@@ -1338,7 +1437,34 @@ window.__ModuleLoader__.load({
                 paused ? '▶' : '❚❚',
               ),
           h('span', { style: S.stripTitle }, project.title || tr('card.title')),
-          h('span', { style: S.stripCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
+          h(
+            'span',
+            { style: S.stripCount },
+            player === null
+              ? total > 0
+                ? tr('count.progress', { done, total })
+                : tr('count.preparing')
+              : tr('strip.chapter', { id: player.id, at: player.index + 1, total: playlist.length }),
+          ),
+          player === null
+            ? null
+            : h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsh-vo-btn',
+                  style: S.stripRate,
+                  'aria-label': tr('action.speed'),
+                  title: tr('action.speed'),
+                  onClick: () => {
+                    const next = nextRate(speed)
+                    setSpeed(next)
+                    const audio = audioRef.current
+                    if (audio !== null && audio !== undefined) audio.playbackRate = next
+                  },
+                },
+                `${speed}×`,
+              ),
           timeLabel.length === 0 ? null : h('span', { style: S.stripTime }, timeLabel),
           h(
             'div',
@@ -1392,14 +1518,32 @@ window.__ModuleLoader__.load({
               autoPlay: true,
               preload: 'none',
               style: S.stripAudio,
+              onLoadedMetadata: (event) => {
+                const audio = event.currentTarget
+                audio.playbackRate = speed
+                if (player.startMs > 0) {
+                  try {
+                    audio.currentTime = player.startMs / 1000
+                  } catch {
+                    // No seekable range yet: start from the top instead.
+                  }
+                }
+              },
               onTimeUpdate: (event) => {
                 const audio = event.currentTarget
                 setElapsed(audio.currentTime * 1000)
                 setCue(cueAt(cues, audio.currentTime * 1000))
+                storePosition(project.projectId, player.index, audio.currentTime * 1000)
               },
               onPlay: () => setPaused(false),
               onPause: () => setPaused(true),
               onEnded: () => {
+                // Keep the book going: the next chapter mounts its own element.
+                const next = nextPlaybackIndex(player.index, playlist.length)
+                if (next >= 0) {
+                  playAt(next, 0)
+                  return
+                }
                 setPaused(true)
                 setCue('')
                 setElapsed(null)
@@ -1498,6 +1642,11 @@ window.__ModuleLoader__.load({
     exports.progressPercent = progressPercent
     exports.stripBar = stripBar
     exports.stripLine = stripLine
+    exports.playableChapters = playableChapters
+    exports.nextPlaybackIndex = nextPlaybackIndex
+    exports.readPosition = readPosition
+    exports.storePosition = storePosition
+    exports.nextRate = nextRate
     exports.newerProject = newerProject
     exports.parseSrt = parseSrt
     exports.cueAt = cueAt
