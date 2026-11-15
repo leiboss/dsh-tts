@@ -137,8 +137,10 @@ test('registers the tool views and the composer dock strip', async () => {
   assert.deepEqual(registrations, [
     { slot: 'tool.call.toolview', id: 'voiceover_create' },
     { slot: 'tool.call.toolview', id: 'voiceover_status' },
-    // The tool view folds away with the process group; the dock does not.
+    // The tool view folds away with the process group; these two do not.
     { slot: 'conversation.composer.dock', id: 'voiceover-progress' },
+    // ...and one of them sits in the conversation result, after the Turn.
+    { slot: 'conversation.chat.turnTail', id: 'voiceover-progress' },
   ])
 })
 
@@ -180,6 +182,17 @@ test('the dock strip mirrors the latest progress and hides without one', async (
   const rendered = JSON.stringify(tree)
   assert.match(rendered, /只写文档/)
   assert.match(rendered, /4\/5 章/)
+
+  // Nothing pending and nothing failed: the strip stays out of the way.
+  noteProgress('dock-session', { ...snapshot, done: 5, pending: 0, failed: 0 })
+  remount()
+  assert.equal(Dock({ sessionId: 'dock-session' }), null)
+
+  // Failures are actionable, so the strip stays and names the count.
+  noteProgress('dock-session', { ...snapshot, done: 3, pending: 0, failed: 2 })
+  remount()
+  const failedTree = JSON.stringify(Dock({ sessionId: 'dock-session' }))
+  assert.match(failedTree, /2 章失败/)
 })
 
 test('distinguishes running, done and ended-with-failures', async () => {
@@ -323,7 +336,7 @@ test('registers both locales under its namespace and follows changes', async () 
   assert.deepEqual(registered.sort(), ['voiceover:en', 'voiceover:zh'])
   assert.deepEqual(boundTo, ['voiceover'])
   assert.ok(subscribed, 'the panel follows live locale switches')
-  assert.deepEqual(slotKeys, ['voiceover_create', 'voiceover_status', 'voiceover-progress'])
+  assert.deepEqual(slotKeys, ['voiceover_create', 'voiceover_status', 'voiceover-progress', 'voiceover-progress'])
 })
 test('parses SRT into cues and finds the line at a clock position', async () => {
   const client = await loadClient()

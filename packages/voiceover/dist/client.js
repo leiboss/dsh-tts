@@ -1017,6 +1017,10 @@ window.__ModuleLoader__.load({
       const total = typeof entry.total === 'number' ? entry.total : 0
       const done = typeof entry.done === 'number' ? entry.done : 0
       const failed = typeof entry.failed === 'number' ? entry.failed : 0
+      const pending = typeof entry.pending === 'number' ? entry.pending : 0
+      // Once nothing is pending and nothing failed, this line has nothing to say:
+      // the finished state stays in the panel.
+      if (pending === 0 && failed === 0) return null
       const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
       return h(
         'div',
@@ -1093,6 +1097,11 @@ window.__ModuleLoader__.load({
       // even while the tool call sits collapsed inside the process group.
       ctx.slots.inject('conversation.composer.dock', function* () {
         yield ctx.slots.register({ name: 'conversation.composer.dock', id: 'voiceover-progress' }, VoiceoverDock)
+      })
+      // And the same line inside the conversation result: a completed Turn's tail
+      // renders in the message flow, not in the folded process group.
+      ctx.slots.inject('conversation.chat.turnTail', function* () {
+        yield ctx.slots.register({ name: 'conversation.chat.turnTail', id: 'voiceover-progress', order: 0 }, VoiceoverDock)
       })
     }
 
