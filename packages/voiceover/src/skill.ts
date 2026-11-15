@@ -47,9 +47,11 @@ configured), synthesizes, aligns subtitles, and keeps a resumable state file.
    \`voiceover_episode({ projectId })\`. It merges every finished chapter into one
    MP3 with chapter markers, writes a merged SRT next to it, and reports the
    duration. Pass \`coverPath\` for artwork and \`gapMs\` to change the silence
-   between chapters (default 300 ms). Do not re-encode by hand: mixed encoder
-   settings are refused with \`EPISODE_FORMAT_UNSUPPORTED\`, and that error is the
-   actionable part.
+   between chapters (default 300 ms). \`feedBaseUrl\` also writes a one-episode
+   RSS feed; \`loudness: true\` runs one ffmpeg normalisation pass (-16 LUFS) and
+   is skipped with a warning when ffmpeg is unavailable. Do not re-encode by
+   hand: mixed encoder settings are refused with \`EPISODE_FORMAT_UNSUPPORTED\`,
+   and that error is the actionable part.
 
 ## Reading the result honestly
 

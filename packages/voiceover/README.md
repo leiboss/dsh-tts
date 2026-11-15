@@ -60,6 +60,11 @@ dsh plugin --profile <profile> add @leiboss/dsh-voiceover
 - 合并是**帧级拼接，不重编码**；章节参数不一致（例如 Edge 章节混进 SAPI 回退）会直接报
   `EPISODE_FORMAT_UNSUPPORTED`，而不是写出一个变速文件。
 - 章节之间默认插 300ms 带内静音，`gapMs` 可调，`gapMs: 0` 关闭。
+- 传 `feedBaseUrl` 会额外写 `episode/feed.xml`（RSS 2.0 + iTunes 命名空间，绝对
+  enclosure、`itunes:duration`、封面作 `itunes:image`），可直接给播客目录。
+- 传 `loudness: true` 会在打标签前跑一遍 ffmpeg 响度（`-16 LUFS / -1.5 dBTP`）；
+  ffmpeg 不是依赖，缺失或被沙箱拦下时成片照出，只记一条 warning（配置里的
+  `ffmpegPath` 可指定非 PATH 的二进制）。
 - 输入没变时再跑是 no-op：`episode/*.json` 里的指纹决定是否重写。
 - 面板会在章节列表上方多出一行成片播放器；无 Web 宿主时用路径自行播放。
 

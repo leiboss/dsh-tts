@@ -24,6 +24,7 @@ export const Config = z.object({
         .default('news')
         .description('Default spoken-script style.'),
     auditSample: z.number().default(2).description('Chapters always audited from the start of the book.'),
+    ffmpegPath: z.string().default('ffmpeg').description('ffmpeg binary used by the optional episode loudness pass.'),
     llmBaseUrl: z.string().description('OpenAI-compatible base URL, for example https://api.deepseek.com/v1.'),
     llmApiKey: z.string().description('API key for the model endpoint.'),
     llmModel: z.string().default('deepseek-chat').description('Model name recorded in the manifest.'),
@@ -328,6 +329,16 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
             author: { type: 'string', description: 'Author or narrator shown in the tag.' },
             coverPath: { type: 'string', description: 'Absolute path to a .jpg or .png cover, at most 1 MiB.' },
             gapMs: { type: 'number', description: 'Silence between chapters in milliseconds. Defaults to 300; 0 disables it.' },
+            loudness: {
+                type: 'boolean',
+                description: 'Run one ffmpeg loudness pass (-16 LUFS). ffmpeg is not required: when it is missing or blocked the episode is still written and the warning says so.',
+            },
+            feedBaseUrl: {
+                type: 'string',
+                description: 'Absolute base URL that will serve the episode directory; giving it writes feed.xml for podcast directories.',
+            },
+            feedDescription: { type: 'string', description: 'Feed and episode description. Defaults to the title.' },
+            feedLink: { type: 'string', description: 'Channel link (site or homepage). Defaults to the audio URL.' },
         },
         output: {
             schema: {
@@ -337,6 +348,8 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
                     episodePath: { type: 'string', description: 'Absolute path to the merged MP3.' },
                     subtitlesPath: { type: 'string', description: 'Merged SRT path; empty when the project has no subtitles.' },
                     metadataPath: { type: 'string', description: 'Episode metadata (chapter timeline, size, fingerprint).' },
+                    feedPath: { type: 'string', description: 'RSS feed path; empty when no base URL was given.' },
+                    loudness: { type: 'string', description: '`applied` when ffmpeg normalised the audio, `skipped` otherwise.' },
                     durationMs: { type: 'number', description: 'Total duration including the gaps.' },
                     chapters: { type: 'number', description: 'Chapters merged into the file.' },
                     bytes: { type: 'number', description: 'Size of the merged file.' },
@@ -357,6 +370,8 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
                                 ? []
                                 : [`Subtitles: ${value.subtitlesPath}`]),
                             `Metadata: ${value.metadataPath ?? ''}`,
+                            ...(typeof value.feedPath === 'string' && value.feedPath.length > 0 ? [`Feed: ${value.feedPath}`] : []),
+                            ...(value.loudness === 'applied' ? ['Loudness: normalised to -16 LUFS'] : []),
                             ...((value.warnings ?? []).length === 0
                                 ? []
                                 : ['Warnings:', ...(value.warnings ?? []).map((warning) => `- ${warning}`)]),
@@ -393,12 +408,25 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
                 ...(args.author === undefined ? {} : { author: args.author }),
                 ...(args.coverPath === undefined ? {} : { coverPath: args.coverPath }),
                 ...(args.gapMs === undefined ? {} : { gapMs: args.gapMs }),
+                ...(args.loudness === undefined ? {} : { loudness: args.loudness }),
+                ...(config.ffmpegPath === undefined ? {} : { ffmpegPath: config.ffmpegPath }),
+                ...(args.feedBaseUrl === undefined
+                    ? {}
+                    : {
+                        feed: {
+                            baseUrl: args.feedBaseUrl,
+                            ...(args.feedDescription === undefined ? {} : { description: args.feedDescription }),
+                            ...(args.feedLink === undefined ? {} : { link: args.feedLink }),
+                        },
+                    }),
                 chapters,
             });
             return {
                 episodePath: result.audioPath,
                 subtitlesPath: result.subtitlesPath,
                 metadataPath: result.metadataPath,
+                feedPath: result.feedPath,
+                loudness: result.loudness,
                 durationMs: result.durationMs,
                 chapters: result.chapters,
                 bytes: result.bytes,

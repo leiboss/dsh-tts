@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.1
+
+- **A one-episode RSS feed.** `voiceover_episode({ feedBaseUrl })` writes
+  `episode/feed.xml`: RSS 2.0 with the iTunes namespace, an absolute
+  percent-encoded `enclosure`, `itunes:duration`, the cover as `itunes:image`
+  and a `pubDate`. Relative enclosures are the usual reason a directory refuses
+  a feed, so the base URL is required rather than guessed.
+- **Optional loudness normalisation.** `loudness: true` runs one ffmpeg pass
+  (`loudnorm=I=-16:TP=-1.5:LRA=11`) over the merged audio before tagging, so the
+  chapter markers describe the bytes that ship. ffmpeg is not a dependency: when
+  it is missing or blocked the episode is still produced and the warning says
+  loudness was skipped. `ffmpegPath` in the plugin config points at a
+  non-standard binary.
+- The cover is also written next to the episode as `cover.jpg`/`cover.png`, which
+  is what the feed points at.
+
 ## 0.4.0
 
 - **One finished file per project.** `voiceover_episode` merges the chapters into

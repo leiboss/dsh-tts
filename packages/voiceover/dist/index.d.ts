@@ -19,6 +19,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     defaultRate: z<string, string, "defined">;
     style: z<"lecture" | "news" | "story" | "docs", "lecture" | "news" | "story" | "docs", "defined">;
     auditSample: z<number, number, "defined">;
+    ffmpegPath: z<string, string, "defined">;
     llmBaseUrl: z<string, string, "plain">;
     llmApiKey: z<string, string, "plain">;
     llmModel: z<string, string, "defined">;
@@ -30,6 +31,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     defaultRate: z<string, string, "defined">;
     style: z<"lecture" | "news" | "story" | "docs", "lecture" | "news" | "story" | "docs", "defined">;
     auditSample: z<number, number, "defined">;
+    ffmpegPath: z<string, string, "defined">;
     llmBaseUrl: z<string, string, "plain">;
     llmApiKey: z<string, string, "plain">;
     llmModel: z<string, string, "defined">;
@@ -43,6 +45,8 @@ export interface VoiceoverConfig {
     defaultRate?: string;
     style?: StyleProfile;
     auditSample?: number;
+    /** ffmpeg binary used by the optional episode loudness pass. */
+    ffmpegPath?: string;
     llmBaseUrl?: string;
     llmApiKey?: string;
     llmModel?: string;

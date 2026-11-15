@@ -18,6 +18,16 @@ export interface EpisodeInput {
     coverPath?: string;
     /** Silence between chapters in milliseconds; 0 disables it. */
     gapMs?: number;
+    /** Run one ffmpeg loudness pass over the merged audio; skipped when it cannot run. */
+    loudness?: boolean;
+    /** ffmpeg binary; defaults to `ffmpeg` from PATH. */
+    ffmpegPath?: string;
+    /** Write a single-episode RSS feed pointing at `baseUrl`. */
+    feed?: {
+        baseUrl: string;
+        description?: string;
+        link?: string;
+    };
     chapters: readonly EpisodeChapterInput[];
 }
 /** One chapter as recorded in the episode metadata. */
@@ -44,6 +54,12 @@ export interface EpisodeMetadata {
     /** File names relative to the episode directory. */
     audio: string;
     subtitles: string;
+    /** `applied` only when ffmpeg actually replaced the audio. */
+    loudness: 'applied' | 'skipped';
+    /** Cover file name, when one was written next to the episode. */
+    cover?: string;
+    /** Feed file name, when a feed was written. */
+    feed?: string;
 }
 /** What one assembled episode produced. */
 export interface EpisodeResult {
@@ -51,9 +67,13 @@ export interface EpisodeResult {
     /** Empty when the project has no subtitles at all. */
     subtitlesPath: string;
     metadataPath: string;
+    /** Empty when no feed was requested. */
+    feedPath: string;
     durationMs: number;
     bytes: number;
     chapters: number;
+    /** Whether the ffmpeg loudness pass replaced the audio. */
+    loudness: 'applied' | 'skipped';
     warnings: string[];
     /** True when an identical episode already existed and nothing was rewritten. */
     reused: boolean;

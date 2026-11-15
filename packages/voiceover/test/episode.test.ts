@@ -208,6 +208,41 @@ test('reports a missing cover instead of writing a tag without one', async () =>
   )
 })
 
+test('writes a podcast feed and records a skipped loudness pass', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'vo-episode-feed-'))
+  const projectDir = join(dir, 'feed')
+  await mkdir(projectDir, { recursive: true })
+  const ch1 = join(projectDir, 'a.mp3')
+  await writeFile(ch1, mp3Frames(20))
+
+  const result = await buildEpisode({
+    projectId: 'feed',
+    projectDir,
+    title: '只写文档',
+    author: 'leiboss',
+    loudness: true,
+    // A binary that cannot exist: the episode must still be written.
+    ffmpegPath: 'definitely-not-ffmpeg-on-this-machine',
+    feed: { baseUrl: 'https://example.com/audio/', description: '只写文档 听书' },
+    chapters: [{ id: 'ch-01', order: 1, title: '开头', audioPath: ch1, durationMs: 20 * FRAME_MS }],
+  })
+
+  assert.equal(result.loudness, 'skipped')
+  assert.ok(
+    result.warnings.some((warning) => warning.startsWith('loudness skipped:')),
+    'a missing ffmpeg is reported, not hidden',
+  )
+
+  const feed = await readFile(result.feedPath, 'utf8')
+  assert.match(feed, /<title>只写文档<\/title>/)
+  assert.match(feed, /<enclosure url="https:\/\/example\.com\/audio\/%E5%8F%AA%E5%86%99%E6%96%87%E6%A1%A3\.mp3"/)
+  assert.match(feed, /<itunes:duration>00:00:00<\/itunes:duration>/)
+
+  const metadata = await readEpisodeMetadata(projectDir)
+  assert.equal(metadata?.metadata.loudness, 'skipped')
+  assert.equal(metadata?.metadata.feed, 'feed.xml')
+})
+
 test('slugifies titles into safe file stems', () => {
   assert.equal(slugify('只写文档'), '只写文档')
   assert.equal(slugify('a/b:c*d?'), 'a b c d')

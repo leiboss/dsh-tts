@@ -16,6 +16,8 @@ import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { estimateDurationMs, firstFrameOffset, frameDurationMs, parseFrameHeader, sameFormat, silentFrame, } from "./audio/mp3-frames.js";
 import { buildId3v24 } from "./id3.js";
+import { renderFeed } from "./feed.js";
+import { normalizeLoudness } from "./loudness.js";
 import { formatSrt, parseSrt } from "./subtitle.js";
 import { readJson, sha256, writeJsonAtomic } from "./util.js";
 /** Silence inserted between chapters when a caller does not ask for one. */
@@ -89,6 +91,8 @@ function fingerprintOf(input, chapters, gapMs, cover) {
         author: input.author ?? '',
         gapMs,
         cover: cover === undefined ? '' : sha256(cover.data),
+        loudness: input.loudness === true,
+        feed: input.feed?.baseUrl ?? '',
         chapters: chapters.map((chapter) => ({
             id: chapter.id,
             durationMs: Math.round(chapter.durationMs),
@@ -96,6 +100,29 @@ function fingerprintOf(input, chapters, gapMs, cover) {
             subtitles: chapter.subtitlesPath ?? '',
         })),
     }));
+}
+/** Absolute URL for one file inside the episode directory. */
+function episodeUrl(baseUrl, fileName) {
+    return `${baseUrl.replace(/\/+$/, '')}/${encodeURIComponent(fileName)}`;
+}
+/** Write the one-episode feed next to the audio and return its path. */
+async function writeEpisodeFeed(options) {
+    const xml = renderFeed({
+        title: options.title,
+        audioUrl: episodeUrl(options.baseUrl, options.audioName),
+        bytes: options.bytes,
+        durationMs: options.durationMs,
+        publishedAt: options.publishedAt,
+        ...(options.description === undefined ? {} : { description: options.description }),
+        ...(options.link === undefined ? {} : { link: options.link }),
+        ...(options.author === undefined ? {} : { author: options.author }),
+        ...(options.coverName === undefined
+            ? {}
+            : { imageUrl: episodeUrl(options.baseUrl, options.coverName) }),
+    });
+    const feedPath = join(options.dir, 'feed.xml');
+    await writeFile(feedPath, xml, 'utf8');
+    return feedPath;
 }
 /** Write one buffer and wait for the stream to accept it. */
 function writeAsync(stream, buffer) {
@@ -133,13 +160,31 @@ export async function buildEpisode(input) {
     if (previous !== undefined && previous.fingerprint === fingerprint) {
         try {
             const info = await stat(audioPath);
+            let feedPath = '';
+            if (input.feed !== undefined) {
+                feedPath = await writeEpisodeFeed({
+                    dir,
+                    baseUrl: input.feed.baseUrl,
+                    ...(input.feed.description === undefined ? {} : { description: input.feed.description }),
+                    ...(input.feed.link === undefined ? {} : { link: input.feed.link }),
+                    title: previous.title,
+                    ...(previous.author === undefined ? {} : { author: previous.author }),
+                    durationMs: previous.durationMs,
+                    bytes: info.size,
+                    publishedAt: previous.createdAt,
+                    audioName: previous.audio,
+                    ...(previous.cover === undefined ? {} : { coverName: previous.cover }),
+                });
+            }
             return {
                 audioPath,
                 subtitlesPath: previous.subtitles.length > 0 ? subtitlesPath : '',
                 metadataPath,
+                feedPath,
                 durationMs: previous.durationMs,
                 bytes: info.size,
                 chapters: previous.chapters.length,
+                loudness: previous.loudness ?? 'skipped',
                 warnings: [],
                 reused: true,
             };
@@ -201,6 +246,25 @@ export async function buildEpisode(input) {
         await rm(partPath, { force: true }).catch(() => { });
         throw error;
     }
+    // The loudness pass replaces the audio, so it runs before tagging: the tag
+    // must describe the bytes that end up in the file.
+    let audioSource = partPath;
+    let loudness = 'skipped';
+    if (input.loudness === true) {
+        const normalizedPath = join(dir, `.${slug}.norm.mp3`);
+        const outcome = await normalizeLoudness({
+            inputPath: partPath,
+            outputPath: normalizedPath,
+            ...(input.ffmpegPath === undefined ? {} : { ffmpegPath: input.ffmpegPath }),
+        });
+        if (outcome.applied) {
+            audioSource = normalizedPath;
+            loudness = 'applied';
+        }
+        else {
+            warnings.push(`loudness skipped: ${outcome.reason ?? 'ffmpeg unavailable'}`);
+        }
+    }
     const id3Chapters = timeline.map((entry) => ({
         id: entry.id,
         title: entry.title,
@@ -216,8 +280,10 @@ export async function buildEpisode(input) {
     });
     const finalStream = createWriteStream(audioPath);
     await writeAsync(finalStream, tag);
-    await pipeline(createReadStream(partPath), finalStream);
+    await pipeline(createReadStream(audioSource), finalStream);
     await rm(partPath, { force: true }).catch(() => { });
+    if (audioSource !== partPath)
+        await rm(audioSource, { force: true }).catch(() => { });
     // Merge the subtitles on the same timeline the tag uses.
     const units = [];
     for (const entry of timeline) {
@@ -247,6 +313,13 @@ export async function buildEpisode(input) {
         warnings.push('no subtitles were merged: the project has none');
     const info = await stat(audioPath);
     const durationMs = timeline.length > 0 ? (timeline[timeline.length - 1]?.endMs ?? 0) : 0;
+    // The cover is also written as a file, so the feed can point at it.
+    let coverName;
+    if (cover !== undefined) {
+        coverName = cover.mime === 'image/png' ? 'cover.png' : 'cover.jpg';
+        await writeFile(join(dir, coverName), cover.data);
+    }
+    const feedName = input.feed === undefined ? undefined : 'feed.xml';
     const metadata = {
         schemaVersion: 1,
         projectId: input.projectId,
@@ -260,15 +333,36 @@ export async function buildEpisode(input) {
         createdAt: new Date().toISOString(),
         audio: `${slug}.mp3`,
         subtitles: hasSubtitles ? `${slug}.srt` : '',
+        loudness,
+        ...(coverName === undefined ? {} : { cover: coverName }),
+        ...(feedName === undefined ? {} : { feed: feedName }),
     };
     await writeJsonAtomic(metadataPath, metadata);
+    let feedPath = '';
+    if (input.feed !== undefined) {
+        feedPath = await writeEpisodeFeed({
+            dir,
+            baseUrl: input.feed.baseUrl,
+            ...(input.feed.description === undefined ? {} : { description: input.feed.description }),
+            ...(input.feed.link === undefined ? {} : { link: input.feed.link }),
+            title: input.title,
+            ...(input.author === undefined ? {} : { author: input.author }),
+            durationMs,
+            bytes: info.size,
+            publishedAt: metadata.createdAt,
+            audioName: metadata.audio,
+            ...(coverName === undefined ? {} : { coverName }),
+        });
+    }
     return {
         audioPath,
         subtitlesPath: hasSubtitles ? subtitlesPath : '',
         metadataPath,
+        feedPath,
         durationMs,
         bytes: info.size,
         chapters: timeline.length,
+        loudness,
         warnings,
         reused: false,
     };
