@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- `resolveEngine` no longer caches a failed pure-JS backend. A process that
+  started before `node-edge-tts` was installed kept choosing the `edge-tts` CLI
+  for the rest of its life; `auto` now caches only a positive `edge-js` result.
+  The CLI-missing error also names the import failure, so "install the CLI" and
+  "the JS backend cannot be imported" are no longer the same message.
+
 ## 0.3.2
 
 - An icon (`icon.svg`, 36x36, shared navy tile with a speaker) declared through the

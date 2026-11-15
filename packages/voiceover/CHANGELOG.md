@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.5
+
+- **The progress strip is a player once the job is done.** The thin bar in the
+  conversation result was always the job's percentage, so a finished project left
+  a full bar next to the play button that never moved while the audio played. It
+  now follows the audio clock once nothing is left to generate (and while audio
+  is actually playing), is taller, is clickable to seek, and exposes
+  `role="progressbar"` with the played position.
+- **Progress is measured against the plan, not the record count.** One finished
+  chapter of eight used to read 100%, and a one-chapter job jumped straight from
+  0 to 100. Every planned chapter is recorded as `queued` before the first one
+  runs, and each stage (adapted, audited, synthesized) is written to
+  `state.json`, throttled to one write per 500 ms with a forced flush at the
+  chapter boundary. A failed progress write is logged, not turned into a chapter
+  failure.
+- **The subtitle line no longer flashes the status between cues.** While audio
+  plays the line is reserved, so `已完成 · 15:15` stopped appearing between every
+  subtitle; it returns when playback stops.
+- The panel's player keeps its audio URL across polls, the freshest project wins
+  when two surfaces poll the same session, the session-to-project mapping
+  survives a restart, and a failing strip renders its own error row instead of
+  the host's placeholder.
+- README shots for the strip in both states, rendered from the same client
+  bundle as the panel shots.
+
 ## 0.3.4
 
 - Display metadata. The plugin row had a title only through the package-name
