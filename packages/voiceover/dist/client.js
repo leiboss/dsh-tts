@@ -354,7 +354,7 @@ window.__ModuleLoader__.load({
         cursor: 'pointer',
       },
       // Dock strip under the composer: one line, always visible while a job runs.
-      dock: {
+      strip: {
         display: 'flex',
         alignItems: 'center',
         gap: 8,
@@ -367,25 +367,25 @@ window.__ModuleLoader__.load({
         width: '100%',
         boxSizing: 'border-box',
       },
-      dockDot: { width: 6, height: 6, borderRadius: 999, background: 'var(--dsw-alias-brand-primary)', flex: 'none' },
-      dockTitle: {
+      stripDot: { width: 6, height: 6, borderRadius: 999, background: 'var(--dsw-alias-brand-primary)', flex: 'none' },
+      stripTitle: {
         color: 'var(--dsw-alias-label-primary)',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
         maxWidth: 180,
       },
-      dockCount: { whiteSpace: 'nowrap' },
-      dockTrack: {
+      stripCount: { whiteSpace: 'nowrap' },
+      stripTrack: {
         flex: 1,
         height: 4,
         borderRadius: 999,
         background: 'var(--dsw-static-neutral-bluish-100, #ebeef2)',
         overflow: 'hidden',
       },
-      dockFill: { height: '100%', background: 'var(--dsw-alias-brand-primary)' },
-      dockFailed: { color: 'var(--dsw-alias-state-error-primary)', whiteSpace: 'nowrap' },
-      dockHint: { whiteSpace: 'nowrap', opacity: 0.7 },
+      stripFill: { height: '100%', background: 'var(--dsw-alias-brand-primary)' },
+      stripFailed: { color: 'var(--dsw-alias-state-error-primary)', whiteSpace: 'nowrap' },
+      stripHint: { whiteSpace: 'nowrap', opacity: 0.7 },
     }
 
     // ------------------------------------------------------------------ data
@@ -995,14 +995,14 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Always-visible progress strip under the composer.
+     * One-line progress strip for the conversation result.
      *
      * Tool views render inside the collapsed process group, so a running job is
      * easy to lose. This is a list slot below the composer: it cannot be folded
      * away, carries only the essentials, and points back to the panel for the
      * per-chapter actions.
      */
-    function VoiceoverDock(props) {
+    function VoiceoverStrip(props) {
       const sessionId = props?.sessionId
       const [entry, setEntry] = react.useState(() =>
         typeof sessionId === 'string' ? (activity.get(sessionId) ?? null) : null,
@@ -1024,13 +1024,13 @@ window.__ModuleLoader__.load({
       const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
       return h(
         'div',
-        { style: S.dock, role: 'status', 'aria-live': 'polite' },
-        h('span', { style: S.dockDot, 'aria-hidden': 'true' }),
-        h('span', { style: S.dockTitle }, entry.title || tr('card.title')),
-        h('span', { style: S.dockCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
-        h('div', { style: S.dockTrack, 'aria-hidden': 'true' }, h('div', { style: { ...S.dockFill, width: `${pct}%` } })),
-        failed > 0 ? h('span', { style: S.dockFailed }, tr('dock.failed', { count: failed })) : null,
-        h('span', { style: S.dockHint }, tr('dock.hint')),
+        { style: S.strip, role: 'status', 'aria-live': 'polite' },
+        h('span', { style: S.stripDot, 'aria-hidden': 'true' }),
+        h('span', { style: S.stripTitle }, entry.title || tr('card.title')),
+        h('span', { style: S.stripCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
+        h('div', { style: S.stripTrack, 'aria-hidden': 'true' }, h('div', { style: { ...S.stripFill, width: `${pct}%` } })),
+        failed > 0 ? h('span', { style: S.stripFailed }, tr('dock.failed', { count: failed })) : null,
+        h('span', { style: S.stripHint }, tr('dock.hint')),
       )
     }
 
@@ -1093,15 +1093,10 @@ window.__ModuleLoader__.load({
         yield ctx.slots.register({ name: 'tool.call.toolview', key: 'voiceover_create' }, VoiceoverPanel)
         yield ctx.slots.register({ name: 'tool.call.toolview', key: 'voiceover_status' }, VoiceoverPanel)
       })
-      // The render-independent surface: a list slot below the composer, visible
-      // even while the tool call sits collapsed inside the process group.
-      ctx.slots.inject('conversation.composer.dock', function* () {
-        yield ctx.slots.register({ name: 'conversation.composer.dock', id: 'voiceover-progress' }, VoiceoverDock)
-      })
-      // And the same line inside the conversation result: a completed Turn's tail
-      // renders in the message flow, not in the folded process group.
+      // The progress line belongs in the conversation result: a completed Turn's
+      // tail renders in the message flow, outside the folded process group.
       ctx.slots.inject('conversation.chat.turnTail', function* () {
-        yield ctx.slots.register({ name: 'conversation.chat.turnTail', id: 'voiceover-progress', order: 0 }, VoiceoverDock)
+        yield ctx.slots.register({ name: 'conversation.chat.turnTail', id: 'voiceover-progress', order: 0 }, VoiceoverStrip)
       })
     }
 
@@ -1112,7 +1107,7 @@ window.__ModuleLoader__.load({
     exports.noteProgress = noteProgress
     exports.subscribeActivity = subscribeActivity
     exports.__activity = activity
-    exports.VoiceoverDock = VoiceoverDock
+    exports.VoiceoverStrip = VoiceoverStrip
     exports.projectIdFrom = projectIdFrom
     exports.blocksText = blocksText
     exports.formatDuration = formatDuration

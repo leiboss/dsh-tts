@@ -2,12 +2,13 @@
 
 ## 0.3.2
 
-- A progress strip under the composer. Tool views render inside the collapsed
-  process group, so a running job was invisible unless the tool call was
-  expanded. The strip is a `conversation.composer.dock` entry: it stays visible,
-  shows title, `done/total`, a thin bar and the failed count, and points back to
-  the panel for per-chapter actions. It reuses the panel's polls through a
-  per-session store, so there is still one poller.
+- A progress strip in the conversation result. Tool views render inside the
+  collapsed process group, so a running job was invisible unless the call was
+  expanded. The strip registers into `conversation.chat.turnTail`, which renders
+  in the message flow when a Turn completes: title, `done/total`, a thin bar and
+  the failed count, pointing back to the panel for per-chapter actions. It
+  reuses the panel's polls through a per-session store, so there is still one
+  poller. It hides once nothing is pending and nothing failed.
 ## 0.3.1
 
 - **The conversation panel never appeared.** `dsh.client.inject` named three

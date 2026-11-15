@@ -137,19 +137,17 @@ test('registers the tool views and the composer dock strip', async () => {
   assert.deepEqual(registrations, [
     { slot: 'tool.call.toolview', id: 'voiceover_create' },
     { slot: 'tool.call.toolview', id: 'voiceover_status' },
-    // The tool view folds away with the process group; these two do not.
-    { slot: 'conversation.composer.dock', id: 'voiceover-progress' },
-    // ...and one of them sits in the conversation result, after the Turn.
+    // The tool view folds away with the process group; this one sits in the result.
     { slot: 'conversation.chat.turnTail', id: 'voiceover-progress' },
   ])
 })
 
-test('the dock strip mirrors the latest progress and hides without one', async () => {
+test('the result strip mirrors the latest progress and hides when finished', async () => {
   const { react, remount } = recordingReact()
   const client = await loadClient(react)
   const noteProgress = client.noteProgress as (sessionId: unknown, snapshot: unknown) => void
   const subscribeActivity = client.subscribeActivity as (listener: () => void) => () => void
-  const Dock = client.VoiceoverDock as (props: unknown) => unknown
+  const Dock = client.VoiceoverStrip as (props: unknown) => unknown
 
   remount()
   assert.equal(Dock({ sessionId: 'dock-idle' }), null, 'no job means no strip')
@@ -336,7 +334,7 @@ test('registers both locales under its namespace and follows changes', async () 
   assert.deepEqual(registered.sort(), ['voiceover:en', 'voiceover:zh'])
   assert.deepEqual(boundTo, ['voiceover'])
   assert.ok(subscribed, 'the panel follows live locale switches')
-  assert.deepEqual(slotKeys, ['voiceover_create', 'voiceover_status', 'voiceover-progress', 'voiceover-progress'])
+  assert.deepEqual(slotKeys, ['voiceover_create', 'voiceover_status', 'voiceover-progress'])
 })
 test('parses SRT into cues and finds the line at a clock position', async () => {
   const client = await loadClient()
