@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -113,6 +113,52 @@ test('runs a project end to end and writes a schema-valid manifest', async () =>
     const subtitle = await readFile(join(result.projectDir, 'audio', 'ch-01.est.srt'), 'utf8')
     assert.match(subtitle, /^1\n00:00:00,000 --> /)
     assert.match(subtitle, /2\n/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('records every planned chapter and the running stage before the chapter ends', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'vo-stages-'))
+  try {
+    /** The state file exactly as the panel would read it mid-synthesis. */
+    let duringSynth: { chapters: { id: string; status: string }[] } | undefined
+    const readProgress = async (): Promise<typeof duringSynth> => {
+      const [projectId] = await readdir(dir)
+      return JSON.parse(await readFile(join(dir, projectId ?? '', 'state', 'state.json'), 'utf8'))
+    }
+
+    const synth = fakeSynthesizer()
+    const result = await runProject(
+      {
+        completer: fakeCompleter(),
+        synth: {
+          async synthesize(request: { text: string; voice: string; rate: string }) {
+            duringSynth = await readProgress()
+            return synth.synthesize(request)
+          },
+        },
+      },
+      {
+        outputDir: dir,
+        title: '测试文稿',
+        text: TEXT,
+        voice: 'zh-CN-XiaoxiaoNeural',
+        rate: '+0%',
+        style: 'news',
+        network: true,
+      },
+    )
+
+    // A bar cannot show progress over chapters the state file never lists, and a
+    // chapter that has not started must not look finished.
+    assert.deepEqual(
+      duringSynth?.chapters.map((chapter) => chapter.id),
+      ['ch-01', 'ch-02'],
+    )
+    assert.notEqual(duringSynth?.chapters[0]?.status, 'queued', 'the running chapter reports its stage')
+    assert.equal(duringSynth?.chapters[1]?.status, 'queued')
+    assert.deepEqual(result.state.chapters.map((chapter) => chapter.status), ['done', 'done'])
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

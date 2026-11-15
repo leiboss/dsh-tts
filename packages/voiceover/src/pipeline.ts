@@ -93,6 +93,15 @@ export interface ProjectResult {
 const FALLBACK_CHAPTER_CHARS = 1400
 
 /**
+ * Shortest gap between two in-progress state writes.
+ *
+ * Stage writes exist so a long synthesis is visible; rewriting the whole state
+ * on every stage of a 40-chapter book would be pointless load, so a burst of
+ * stages inside this window collapses into the next write.
+ */
+const PROGRESS_WRITE_INTERVAL_MS = 500
+
+/**
  * Canonical text used for identity and planning.
  *
  * Every caller (plugin tool, daemon, rerun) must key projects by this string,
@@ -466,12 +475,54 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
     createdAt: existing?.createdAt ?? now().toISOString(),
   }
 
-  // Persist the plan before the first chapter runs, so the conversation panel
-  // can show progress instead of a missing-state 404 during chapter one.
-  await writeJsonAtomic(paths(projectDir).state, state)
   const chaptersById = new Map(outline.chapters.map((chapter) => [chapter.id, chapter]))
   const ordered = [...outline.chapters].sort((a, b) => a.sourceRange[0] - b.sourceRange[0])
   const skipped: string[] = []
+
+  // Every planned chapter is recorded before the first one runs. A state file
+  // that lists only finished chapters gave every reader an empty list and a bar
+  // that could only jump from 0% to 100%, because the stage-weighted percentage
+  // had no denominator for chapters that had not started yet.
+  for (const [index, chapter] of ordered.entries()) {
+    if (state.chapters.some((entry) => entry.id === chapter.id)) continue
+    const text = paragraphs.slice(chapter.sourceRange[0], chapter.sourceRange[1] + 1).join('\n\n')
+    state.chapters.push({
+      id: chapter.id,
+      order: index + 1,
+      title: chapter.title,
+      chars: text.length,
+      sourceRange: chapter.sourceRange,
+      status: 'queued',
+    })
+  }
+
+  // Persist the plan before the first chapter runs, so the conversation panel
+  // can show the queue and its progress instead of a missing-state 404.
+  await writeJsonAtomic(paths(projectDir).state, state)
+
+  /**
+   * Write in-progress state, at most once per interval.
+   *
+   * A chapter can sit inside synthesis for a minute. Writing only at chapter
+   * boundaries meant every surface read the same percentage for that minute, so
+   * each stage is written, throttled, and the chapter boundary forces a flush.
+   */
+  let lastProgressWrite = 0
+  const persist = async (force = false): Promise<void> => {
+    const at = Date.now()
+    if (!force && at - lastProgressWrite < PROGRESS_WRITE_INTERVAL_MS) return
+    lastProgressWrite = at
+    try {
+      await writeJsonAtomic(paths(projectDir).state, state)
+    } catch (error) {
+      // This write only exists so a reader can see the stage; a transient
+      // failure must not turn a working chapter into a failed one. The final
+      // write after the loop still reports a broken output directory.
+      deps.log?.('state.progress.write.failed', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
   // A typo in a chapter id must fail loudly, not silently re-run nothing.
   if (options.only !== undefined) {
@@ -515,6 +566,9 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
 
     try {
       upsert({ ...record, status: 'adapted' })
+      // Persisted before the work starts, so the panel says "adapting" while the
+      // model is actually thinking instead of showing the chapter as queued.
+      await persist()
       const prevSummary = index > 0 ? (ordered[index - 1]?.summary ?? '') : ''
       const nextSummary = ordered[index + 1]?.summary ?? ''
 
@@ -536,6 +590,7 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
       if (shouldAudit && deps.completer !== undefined) {
         const issues = await auditChapter(deps, { source: chapterText, script })
         upsert({ ...record, status: 'audited' })
+        await persist()
         if (issues.length > 0) {
           const repaired = await adaptChapter(deps, {
             docTitle: options.title,
@@ -578,6 +633,9 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
           format: synthesized.format,
         },
       })
+      // The audio exists and the subtitles do not yet: that is the state a
+      // listener can already play, so it is worth writing down.
+      await persist()
 
       const segmented = await subtitleUnits(deps, script)
       const aligned = alignUnits(segmented.units, synthesized.durationMs, synthesized.words)
@@ -624,7 +682,9 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
       state.warnings.push(`${chapter.id}: failed with ${code}`)
     }
 
-    await writeJsonAtomic(paths(projectDir).state, state)
+    // A chapter boundary always writes: the next poll must see this chapter's
+    // final stage even when the stages above were throttled.
+    await persist(true)
   }
 
   const manifest = buildManifest({ state, outline: chaptersById, title: options.title, now })
