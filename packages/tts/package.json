@@ -1,6 +1,6 @@
 {
   "name": "@leiboss/dsh-tts",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Reliable TTS engine for DSH plugins: concurrency-safe synthesis, layered error semantics, chunked long-text, provider fallback, and an injectable ctx.tts service.",
   "license": "MIT",
   "author": "leiboss",
@@ -44,9 +44,7 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-tool",
-        "@deepseek-ai/dsh-client-ui-slots"
+        "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "immediately": true
     }

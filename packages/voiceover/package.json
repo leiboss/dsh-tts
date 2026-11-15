@@ -34,6 +34,7 @@
     ".": "./dist/index.js",
     "./client": "./dist/client.js",
     "./schemas/*": "./schemas/*",
+    "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
   "dsh": {
@@ -53,6 +54,7 @@
     "client",
     "cordis.patch.yml",
     "schemas",
+    "icon.svg",
     "README.md"
   ],
   "engines": {
