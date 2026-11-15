@@ -1133,7 +1133,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Ambient player and progress line under the composer.
+     * Ambient player and progress line above the composer.
      *
      * Tool views render inside the collapsed process group, and a collapsed row
      * is not mounted at all, so this surface cannot wait for the panel to poll.
@@ -1141,9 +1141,9 @@ window.__ModuleLoader__.load({
      * loads the first playable chapter, and follows the audio clock to show the
      * current subtitle line.
      *
-     * It lives in the composer dock rather than in a Turn: one player per
-     * Session, not one per reply, and it is still on screen after the Turn that
-     * started the job has scrolled away.
+     * It lives in the input dock rather than in a Turn: one player per Session,
+     * not one per reply, and it is still on screen after the Turn that started
+     * the job has scrolled away.
      */
     function VoiceoverStrip(props) {
       const sessionId = props?.sessionId
@@ -1474,10 +1474,10 @@ window.__ModuleLoader__.load({
       })
       // Ambient session state, not a message attachment. The turn tail renders
       // on every completed Turn, so registering there drew one player under
-      // every reply; the composer dock renders once per session and stays in
-      // reach while the job runs.
-      ctx.slots.inject('conversation.composer.dock', function* () {
-        yield ctx.slots.register({ name: 'conversation.composer.dock', id: 'voiceover-progress', order: 0 }, VoiceoverStrip)
+      // every reply; the input dock renders once per session, full width, just
+      // above the composer card.
+      ctx.slots.inject('conversation.input.dock', function* () {
+        yield ctx.slots.register({ name: 'conversation.input.dock', id: 'voiceover-progress', order: 30 }, VoiceoverStrip)
       })
     }
 

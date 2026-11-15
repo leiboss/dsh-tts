@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.7
+
+- **The strip moved above the composer, full width.** 0.3.6 put it in
+  `conversation.composer.dock`, below the composer card; the same single-instance
+  intent is served better by `conversation.input.dock`, which is the full-width
+  seat directly above the input. Still one player per Session, never one per
+  reply.
+
 ## 0.3.6
 
 - **One player per session, not one per reply.** The strip was registered in
