@@ -91,6 +91,9 @@ window.__ModuleLoader__.load({
         'hint.allDone': '全部 {done} 章已生成（音频 + 字幕）· 需要文件路径时让我运行 voiceover_export。',
         'hint.moreWarnings': '…还有 {count} 条提醒',
         'meta.updated': '更新于 {time}',
+        'dock.title': '有声项目',
+        'dock.failed': '{count} 章失败',
+        'dock.hint': '详情在对话的工具调用里',
         'warn.llmOff': '未配置模型：按原文朗读，未做口语化改写',
         'warn.outlineMerge': '章节规划失败，已按长度均分',
         'warn.outlineBlock': '部分正文块规划失败，已跳过',
@@ -158,6 +161,9 @@ window.__ModuleLoader__.load({
         'hint.allDone': 'All {done} chapters are ready (audio + subtitles). Ask me to run voiceover_export for the file paths.',
         'hint.moreWarnings': '…and {count} more',
         'meta.updated': 'Updated {time}',
+        'dock.title': 'Voiceover',
+        'dock.failed': '{count} failed',
+        'dock.hint': 'Details live in the tool call above',
         'warn.llmOff': 'No model configured: the text was read as written',
         'warn.outlineMerge': 'Chapter planning failed; split by length instead',
         'warn.outlineBlock': 'Some source blocks failed to plan and were skipped',
@@ -347,6 +353,39 @@ window.__ModuleLoader__.load({
         color: 'var(--dsw-alias-brand-primary)',
         cursor: 'pointer',
       },
+      // Dock strip under the composer: one line, always visible while a job runs.
+      dock: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 10px',
+        borderRadius: RADIUS,
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-bg-layer-1)',
+        fontSize: FONT_META,
+        color: 'var(--dsw-alias-label-secondary)',
+        width: '100%',
+        boxSizing: 'border-box',
+      },
+      dockDot: { width: 6, height: 6, borderRadius: 999, background: 'var(--dsw-alias-brand-primary)', flex: 'none' },
+      dockTitle: {
+        color: 'var(--dsw-alias-label-primary)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: 180,
+      },
+      dockCount: { whiteSpace: 'nowrap' },
+      dockTrack: {
+        flex: 1,
+        height: 4,
+        borderRadius: 999,
+        background: 'var(--dsw-static-neutral-bluish-100, #ebeef2)',
+        overflow: 'hidden',
+      },
+      dockFill: { height: '100%', background: 'var(--dsw-alias-brand-primary)' },
+      dockFailed: { color: 'var(--dsw-alias-state-error-primary)', whiteSpace: 'nowrap' },
+      dockHint: { whiteSpace: 'nowrap', opacity: 0.7 },
     }
 
     // ------------------------------------------------------------------ data
@@ -358,6 +397,48 @@ window.__ModuleLoader__.load({
     // loading card, and several status rows for one project share progress.
     const snapshots = new Map()
     const inFlight = new Map()
+
+    /**
+     * Latest progress per session, mirrored from the panel's own polls.
+     *
+     * The comic strip under the composer reads this instead of fetching again:
+     * one poller, two surfaces. Keyed by session because a conversation must not
+     * show another session's job.
+     */
+    const activity = new Map()
+    const activityListeners = new Set()
+
+    /** Notify dock strips; returns the unsubscriber. */
+    function subscribeActivity(listener) {
+      activityListeners.add(listener)
+      return () => activityListeners.delete(listener)
+    }
+
+    /** Record one project's progress for a session, skipping no-op updates. */
+    function noteProgress(sessionId, snapshot) {
+      if (typeof sessionId !== 'string' || typeof snapshot?.projectId !== 'string') return
+      const entry = {
+        projectId: snapshot.projectId,
+        title: snapshot.title,
+        done: snapshot.done,
+        total: snapshot.total,
+        pending: snapshot.pending,
+        failed: snapshot.failed,
+      }
+      const current = activity.get(sessionId)
+      if (
+        current !== undefined &&
+        current.projectId === entry.projectId &&
+        current.done === entry.done &&
+        current.pending === entry.pending &&
+        current.failed === entry.failed
+      ) {
+        return
+      }
+      activity.set(sessionId, entry)
+      for (const listener of activityListeners) listener()
+    }
+
 
     /** Test-only: seed the shared cache so a render test starts from a settled card. */
     function __seedSnapshot(projectId, snapshot) {
@@ -661,6 +742,7 @@ window.__ModuleLoader__.load({
             setProblem(null)
             setSnap(next)
             snapshots.set(id, next)
+            noteProgress(props?.sessionId, next)
             // Running projects poll fast; a project that ended with failures
             // polls slowly so a requested rerun becomes visible.
             if (next.pending > 0) schedule(2000)
@@ -912,6 +994,42 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * Always-visible progress strip under the composer.
+     *
+     * Tool views render inside the collapsed process group, so a running job is
+     * easy to lose. This is a list slot below the composer: it cannot be folded
+     * away, carries only the essentials, and points back to the panel for the
+     * per-chapter actions.
+     */
+    function VoiceoverDock(props) {
+      const sessionId = props?.sessionId
+      const [entry, setEntry] = react.useState(() =>
+        typeof sessionId === 'string' ? (activity.get(sessionId) ?? null) : null,
+      )
+      react.useEffect(() => {
+        if (typeof sessionId !== 'string') return undefined
+        return subscribeActivity(() => setEntry(activity.get(sessionId) ?? null))
+      }, [sessionId])
+
+      if (typeof sessionId !== 'string' || entry === null || entry === undefined) return null
+
+      const total = typeof entry.total === 'number' ? entry.total : 0
+      const done = typeof entry.done === 'number' ? entry.done : 0
+      const failed = typeof entry.failed === 'number' ? entry.failed : 0
+      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
+      return h(
+        'div',
+        { style: S.dock, role: 'status', 'aria-live': 'polite' },
+        h('span', { style: S.dockDot, 'aria-hidden': 'true' }),
+        h('span', { style: S.dockTitle }, entry.title || tr('card.title')),
+        h('span', { style: S.dockCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
+        h('div', { style: S.dockTrack, 'aria-hidden': 'true' }, h('div', { style: { ...S.dockFill, width: `${pct}%` } })),
+        failed > 0 ? h('span', { style: S.dockFailed }, tr('dock.failed', { count: failed })) : null,
+        h('span', { style: S.dockHint }, tr('dock.hint')),
+      )
+    }
+
     // ----------------------------------------------------------------- mount
 
     /**
@@ -971,12 +1089,21 @@ window.__ModuleLoader__.load({
         yield ctx.slots.register({ name: 'tool.call.toolview', key: 'voiceover_create' }, VoiceoverPanel)
         yield ctx.slots.register({ name: 'tool.call.toolview', key: 'voiceover_status' }, VoiceoverPanel)
       })
+      // The render-independent surface: a list slot below the composer, visible
+      // even while the tool call sits collapsed inside the process group.
+      ctx.slots.inject('conversation.composer.dock', function* () {
+        yield ctx.slots.register({ name: 'conversation.composer.dock', id: 'voiceover-progress' }, VoiceoverDock)
+      })
     }
 
     exports.apply = apply
     exports.inject = ['slots']
     exports.__seedSnapshot = __seedSnapshot
     exports.__messages = MESSAGES
+    exports.noteProgress = noteProgress
+    exports.subscribeActivity = subscribeActivity
+    exports.__activity = activity
+    exports.VoiceoverDock = VoiceoverDock
     exports.projectIdFrom = projectIdFrom
     exports.blocksText = blocksText
     exports.formatDuration = formatDuration

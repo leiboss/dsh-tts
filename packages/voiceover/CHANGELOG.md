@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+- A progress strip under the composer. Tool views render inside the collapsed
+  process group, so a running job was invisible unless the tool call was
+  expanded. The strip is a `conversation.composer.dock` entry: it stays visible,
+  shows title, `done/total`, a thin bar and the failed count, and points back to
+  the panel for per-chapter actions. It reuses the panel's polls through a
+  per-session store, so there is still one poller.
 ## 0.3.1
 
 - **The conversation panel never appeared.** `dsh.client.inject` named three

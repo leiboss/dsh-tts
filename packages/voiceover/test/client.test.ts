@@ -44,12 +44,18 @@ interface Element {
  * Minimal React shim: records elements instead of rendering, and keeps hook
  * slots so a single component call sees stable state.
  */
-function recordingReact(): { react: Record<string, unknown>; reset: () => void } {
+function recordingReact(): { react: Record<string, unknown>; reset: () => void; remount: () => void } {
   const cells: unknown[] = []
   let cursor = 0
   return {
     reset: () => {
       cursor = 0
+    },
+    // A remount starts from empty hook cells, which is how one test can render
+    // the same component before and after external state changes.
+    remount: () => {
+      cursor = 0
+      cells.length = 0
     },
     react: {
       createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): Element => ({
@@ -108,10 +114,10 @@ test('formats chapter durations as m:ss', async () => {
   assert.equal(formatDuration(0), '')
 })
 
-test('registers a view for both voiceover tools and nothing else', async () => {
+test('registers the tool views and the composer dock strip', async () => {
   const client = await loadClient()
   const apply = client.apply as (ctx: unknown) => void
-  const keys: string[] = []
+  const registrations: { slot: string; id: string }[] = []
 
   const ctx = {
     slots: {
@@ -120,15 +126,60 @@ test('registers a view for both voiceover tools and nothing else', async () => {
           // Draining the generator is what registers the occupants.
         }
       },
-      register: (options: { key: string }) => {
-        keys.push(options.key)
+      register: (options: { name: string; key?: string; id?: string }) => {
+        registrations.push({ slot: options.name, id: options.key ?? options.id ?? '' })
         return () => {}
       },
     },
   }
   apply(ctx)
 
-  assert.deepEqual(keys, ['voiceover_create', 'voiceover_status'])
+  assert.deepEqual(registrations, [
+    { slot: 'tool.call.toolview', id: 'voiceover_create' },
+    { slot: 'tool.call.toolview', id: 'voiceover_status' },
+    // The tool view folds away with the process group; the dock does not.
+    { slot: 'conversation.composer.dock', id: 'voiceover-progress' },
+  ])
+})
+
+test('the dock strip mirrors the latest progress and hides without one', async () => {
+  const { react, remount } = recordingReact()
+  const client = await loadClient(react)
+  const noteProgress = client.noteProgress as (sessionId: unknown, snapshot: unknown) => void
+  const subscribeActivity = client.subscribeActivity as (listener: () => void) => () => void
+  const Dock = client.VoiceoverDock as (props: unknown) => unknown
+
+  remount()
+  assert.equal(Dock({ sessionId: 'dock-idle' }), null, 'no job means no strip')
+  remount()
+  assert.equal(Dock({}), null, 'no session means no strip')
+
+  let notifications = 0
+  const unsubscribe = subscribeActivity(() => {
+    notifications += 1
+  })
+  const snapshot = { projectId: 'abcdef123456', title: '只写文档', done: 2, total: 5, pending: 3, failed: 0 }
+  noteProgress('dock-session', snapshot)
+  assert.equal(notifications, 1)
+  noteProgress('dock-session', snapshot)
+  assert.equal(notifications, 1, 'an unchanged poll must not wake the strip')
+  noteProgress('dock-session', { ...snapshot, done: 3 })
+  assert.equal(notifications, 2)
+  unsubscribe()
+  noteProgress('dock-session', { ...snapshot, done: 4 })
+  assert.equal(notifications, 2, 'unsubscribing stops notifications')
+  // A snapshot without an id (or a missing session) is ignored, not thrown.
+  noteProgress('dock-session', {})
+  noteProgress(undefined, snapshot)
+
+  const spy = client.__activity as Map<string, unknown>
+  assert.ok(spy.has('dock-session'), 'progress reached the shared store')
+  remount()
+  const tree = Dock({ sessionId: 'dock-session' }) as { props: { role?: string }; children: unknown[] }
+  assert.equal(tree.props.role, 'status')
+  const rendered = JSON.stringify(tree)
+  assert.match(rendered, /只写文档/)
+  assert.match(rendered, /4\/5 章/)
 })
 
 test('distinguishes running, done and ended-with-failures', async () => {
@@ -262,8 +313,8 @@ test('registers both locales under its namespace and follows changes', async () 
           // Drain to run the registrations.
         }
       },
-      register: (options: { key: string }) => {
-        slotKeys.push(options.key)
+      register: (options: { key?: string; id?: string }) => {
+        slotKeys.push(options.key ?? options.id ?? '')
         return () => {}
       },
     },
@@ -272,7 +323,7 @@ test('registers both locales under its namespace and follows changes', async () 
   assert.deepEqual(registered.sort(), ['voiceover:en', 'voiceover:zh'])
   assert.deepEqual(boundTo, ['voiceover'])
   assert.ok(subscribed, 'the panel follows live locale switches')
-  assert.deepEqual(slotKeys, ['voiceover_create', 'voiceover_status'])
+  assert.deepEqual(slotKeys, ['voiceover_create', 'voiceover_status', 'voiceover-progress'])
 })
 test('parses SRT into cues and finds the line at a clock position', async () => {
   const client = await loadClient()
