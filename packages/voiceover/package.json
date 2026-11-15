@@ -1,6 +1,6 @@
 {
   "name": "@leiboss/dsh-voiceover",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Long-form voiceover pipeline for DeepSeek Harness: chapter planning, spoken-script adaptation, subtitles, manifest, and resumable jobs. Turns a document into a publishable audio set.",
   "license": "MIT",
   "author": "leiboss",
@@ -77,7 +77,7 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1-rc.1",
-    "@leiboss/dsh-tts": "^0.3.0"
+    "@leiboss/dsh-tts": "^0.3.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

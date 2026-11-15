@@ -34,6 +34,7 @@ dsh plugin --profile web add @leiboss/dsh-tts
 |---|---|---|
 | `ERR_PNPM_NO_MATCHING_VERSION` | 你的 npm/pnpm 走国内镜像（如 `registry.npmmirror.com`），新版本还没同步 | 加官方源：`dsh plugin --profile web add @leiboss/dsh-voiceover --registry https://registry.npmjs.org/` |
 | `ERR_PNPM_FETCH_404 … .tgz` | npm 的发布处理队列，tarball 要几分钟才可下载 | 等几分钟；`scripts/publish.ps1` 会轮询 tarball 而不是只看元数据 |
+| 装上了但不是最新版（`+ @leiboss/… 0.3.1`） | 包管理器的版本元数据缓存，`latest` 还没刷新 | 显式钉版本：`dsh plugin --profile web add @leiboss/dsh-voiceover@0.3.3` |
 
 ### B. 从源码（想改代码时）
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3
+
+- The engine dependency is now `^0.3.2` instead of `^0.3.0`. Installing this
+  package used to resolve `@leiboss/dsh-tts@0.3.0`, whose client half never
+  loaded, so `tts_generate` rendered without its player even though the manifest
+  here was correct.
 ## 0.3.2
 
 - A skill (`voiceover`) registered through `ctx.skills`, so the agent knows when a
