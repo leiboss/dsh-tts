@@ -414,3 +414,44 @@ test('the bar follows chapter stages, so one chapter still moves it', async () =
   assert.equal(progressPercent([{ status: 'done' }]), 100)
   assert.equal(progressPercent([{ status: 'done' }, { status: 'synthesized' }]), 88)
 })
+test('the freshest project wins, whatever polled last', async () => {
+  const client = await loadClient()
+  const newerProject = client.newerProject as (current: unknown, candidate: unknown) => { projectId: string }
+  const older = { projectId: 'aaaa1111', stateUpdatedAt: '2026-11-15T05:50:00.000Z' }
+  const fresher = { projectId: 'bbbb2222', stateUpdatedAt: '2026-11-15T06:20:00.000Z' }
+
+  assert.equal(newerProject(older, fresher), fresher)
+  // A mounted panel for an old tool call keeps polling its own project; that
+  // write must not beat the newer one.
+  assert.equal(newerProject(fresher, older), fresher)
+  assert.equal(newerProject(null, fresher), fresher)
+  assert.equal(newerProject(fresher, {}), fresher)
+})
+
+test('a stale panel poll cannot overwrite a newer project in the store', async () => {
+  const client = await loadClient()
+  const noteProgress = client.noteProgress as (session: string, snapshot: unknown) => void
+  const store = client.__activity as Map<string, { projectId: string }>
+
+  noteProgress('freshness', {
+    projectId: 'bbbb2222',
+    title: 'new',
+    done: 1,
+    total: 4,
+    pending: 3,
+    failed: 0,
+    stateUpdatedAt: '2026-11-15T06:20:00.000Z',
+    chapters: [],
+  })
+  noteProgress('freshness', {
+    projectId: 'aaaa1111',
+    title: 'old',
+    done: 1,
+    total: 1,
+    pending: 0,
+    failed: 0,
+    stateUpdatedAt: '2026-11-15T05:50:00.000Z',
+    chapters: [],
+  })
+  assert.equal(store.get('freshness')?.projectId, 'bbbb2222')
+})

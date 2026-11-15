@@ -457,6 +457,7 @@ window.__ModuleLoader__.load({
         total: snapshot.total,
         pending: snapshot.pending,
         failed: snapshot.failed,
+        stateUpdatedAt: snapshot.stateUpdatedAt,
         // Chapters travel with the counts so the strip can offer playback without
         // a second request when the panel is the one that saw the snapshot first.
         chapters: Array.isArray(snapshot.chapters) ? snapshot.chapters : [],
@@ -471,8 +472,27 @@ window.__ModuleLoader__.load({
       ) {
         return
       }
+      // A mounted panel for an older tool call keeps polling its own project; its
+      // writes must not overwrite a newer project in the same session.
+      if (current !== undefined && newerProject(current, entry) === current) return
       activity.set(sessionId, entry)
       for (const listener of activityListeners) listener()
+    }
+
+    /**
+     * The newer of two project snapshots, by the host's state timestamp.
+     *
+     * Timestamps come from the state file's mtime, so they order projects by real
+     * activity rather than by which surface happened to poll last.
+     */
+    function newerProject(current, candidate) {
+      if (candidate === null || candidate === undefined) return current
+      if (typeof candidate.projectId !== 'string') return current
+      if (current === null || current === undefined) return candidate
+      if (current.projectId === candidate.projectId) return candidate
+      const a = Date.parse(current.stateUpdatedAt ?? '') || 0
+      const b = Date.parse(candidate.stateUpdatedAt ?? '') || 0
+      return b >= a ? candidate : current
     }
 
 
@@ -1084,7 +1104,9 @@ window.__ModuleLoader__.load({
             const data = await res.json()
             if (stopped) return
             // Keep the shared store's entry when the host has nothing to add.
-            if (data.project !== null && data.project !== undefined) setProject(data.project)
+            if (data.project !== null && data.project !== undefined) {
+              setProject((current) => newerProject(current, data.project))
+            }
             const active =
               data.project !== null && data.project !== undefined && data.project.pending > 0
             // Fast while it runs; a slow heartbeat otherwise, so a project started
@@ -1107,7 +1129,7 @@ window.__ModuleLoader__.load({
         // own heartbeat even though fresher data already exists.
         return subscribeActivity(() => {
           const entry = activity.get(sessionId)
-          if (entry !== undefined) setProject(entry)
+          if (entry !== undefined) setProject((current) => newerProject(current, entry))
         })
       }, [sessionId])
       const chapters = Array.isArray(project?.chapters) ? project.chapters : []
@@ -1346,6 +1368,7 @@ window.__ModuleLoader__.load({
     exports.stateWord = stateWord
     exports.formatClock = formatClock
     exports.progressPercent = progressPercent
+    exports.newerProject = newerProject
     exports.parseSrt = parseSrt
     exports.cueAt = cueAt
     exports.VoiceoverPanel = VoiceoverPanel
