@@ -27,6 +27,8 @@ export interface PanelRouteOptions {
      * the most recently updated project on disk.
      */
     latestProject?: () => Promise<string | undefined>;
+    /** Persisted session mapping, read when the in-memory one is cold. */
+    recallSession?: (sessionId: string) => Promise<string | undefined>;
     debug?: (message: string) => void;
 }
 /**

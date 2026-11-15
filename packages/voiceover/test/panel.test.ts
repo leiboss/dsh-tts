@@ -396,3 +396,28 @@ test('answers which project a session is running, and null when it knows none', 
     await removeWithRetry(root)
   }
 })
+test('a persisted session mapping wins over the latest-project fallback', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vo-panel-'))
+  try {
+    await seedProject(root)
+    const route = new PanelRoute({
+      outputDir: root,
+      // The map is cold after a restart; the persisted record answers instead.
+      projectForSession: () => undefined,
+      recallSession: async (sessionId) => (sessionId === 's-restarted' ? PROJECT_ID : undefined),
+      latestProject: async () => undefined,
+    })
+    const server = fakeServer()
+    route.register(server.server)
+
+    const hit = fakeResponse()
+    await server.route.handler(fakeRequest(`${PANEL_ROUTE_PREFIX}/sessions/s-restarted.json`), hit.res)
+    assert.equal((JSON.parse(hit.body()) as { project: { projectId: string } }).project.projectId, PROJECT_ID)
+
+    const miss = fakeResponse()
+    await server.route.handler(fakeRequest(`${PANEL_ROUTE_PREFIX}/sessions/unknown.json`), miss.res)
+    assert.equal((JSON.parse(miss.body()) as { project: unknown }).project, null)
+  } finally {
+    await removeWithRetry(root)
+  }
+})

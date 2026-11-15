@@ -144,7 +144,10 @@ export class PanelRoute {
         // the in-result strip works even when the tool call is collapsed.
         const sessionMatch = /^sessions\/([A-Za-z0-9_-]{1,80})\.json$/.exec(name);
         if (sessionMatch !== null) {
-            const projectId = this.options.projectForSession?.(sessionMatch[1] ?? '') ?? (await this.options.latestProject?.());
+            const sessionId = sessionMatch[1] ?? '';
+            const projectId = this.options.projectForSession?.(sessionId) ??
+                (await this.options.recallSession?.(sessionId)) ??
+                (await this.options.latestProject?.());
             if (projectId === undefined) {
                 this.answer(res, 200, { project: null });
                 return;

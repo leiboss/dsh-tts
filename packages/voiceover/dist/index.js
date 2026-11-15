@@ -1,7 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import z from '@deepseek-ai/schemastery';
 import { AudioRoute } from '@leiboss/dsh-tts';
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { httpCompleter } from "./llm.js";
@@ -196,8 +196,10 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
             // Remember this session's project so the in-result strip can find it even
             // when the tool call stays collapsed and never mounts its view.
             const sessionId = exec?.agent?.id;
-            if (typeof sessionId === 'string')
+            if (typeof sessionId === 'string') {
                 sessionProjects.set(sessionId, projectId);
+                void rememberSession(outputDir, sessionId, projectId);
+            }
             return { projectId, projectDir: join(outputDir, projectId), status: 'running' };
         },
     });
@@ -377,6 +379,7 @@ function mountWebSurfaces(ctx, config, env = process.env) {
         ...(connection === undefined ? {} : { connection }),
         audioUrlFor: (filePath) => audio.urlFor(filePath),
         projectForSession: (sessionId) => sessionProjects.get(sessionId),
+        recallSession: (sessionId) => recallSession(outputDir, sessionId),
         latestProject: latestProjectResolver(outputDir),
         onRerun: (projectId, chapter) => startRerun(ctx, config, outputDir, projectId, chapter === undefined ? undefined : [chapter]),
         debug,
@@ -433,6 +436,33 @@ function registerSkill(ctx) {
  */
 const sessionProjects = new Map();
 /**
+ * Persist a session's current project.
+ *
+ * The in-memory map dies with the process, and the client has no other way to
+ * learn which project belongs to this conversation after a restart.
+ */
+async function rememberSession(outputDir, sessionId, projectId) {
+    try {
+        const dir = join(outputDir, '.sessions');
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, `${sessionId.replace(/[^A-Za-z0-9_-]/g, '_')}.json`), JSON.stringify({ projectId, at: new Date().toISOString() }), 'utf8');
+    }
+    catch {
+        // The strip falls back to the latest running project when this fails.
+    }
+}
+/** Read the persisted mapping for one session. */
+async function recallSession(outputDir, sessionId) {
+    try {
+        const file = join(outputDir, '.sessions', `${sessionId.replace(/[^A-Za-z0-9_-]/g, '_')}.json`);
+        const parsed = JSON.parse(await readFile(file, 'utf8'));
+        return typeof parsed.projectId === 'string' ? parsed.projectId : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+/**
  * The most recently updated project, with a short cache.
  *
  * The in-memory session map is empty after a restart, so a client that already
@@ -452,7 +482,15 @@ function latestProjectResolver(outputDir) {
                 if (!entry.isDirectory() || !/^[0-9a-f]{8,24}$/.test(entry.name))
                     continue;
                 try {
-                    const info = await stat(join(outputDir, entry.name, 'state', 'state.json'));
+                    const statePath = join(outputDir, entry.name, 'state', 'state.json');
+                    const info = await stat(statePath);
+                    // Only a project with work left may stand in for an unknown session;
+                    // a finished one would freeze the strip on a stale bar.
+                    const state = JSON.parse(await readFile(statePath, 'utf8'));
+                    const chapters = Array.isArray(state.chapters) ? state.chapters : [];
+                    const unfinished = chapters.some((chapter) => chapter.status !== 'done' && chapter.status !== 'failed');
+                    if (!unfinished)
+                        continue;
                     if (best === undefined || info.mtimeMs > best.at)
                         best = { id: entry.name, at: info.mtimeMs };
                 }

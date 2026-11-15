@@ -46,6 +46,8 @@ export interface PanelRouteOptions {
    * the most recently updated project on disk.
    */
   latestProject?: () => Promise<string | undefined>
+  /** Persisted session mapping, read when the in-memory one is cold. */
+  recallSession?: (sessionId: string) => Promise<string | undefined>
   debug?: (message: string) => void
 }
 
@@ -181,8 +183,11 @@ export class PanelRoute {
     // the in-result strip works even when the tool call is collapsed.
     const sessionMatch = /^sessions\/([A-Za-z0-9_-]{1,80})\.json$/.exec(name)
     if (sessionMatch !== null) {
+      const sessionId = sessionMatch[1] ?? ''
       const projectId =
-        this.options.projectForSession?.(sessionMatch[1] ?? '') ?? (await this.options.latestProject?.())
+        this.options.projectForSession?.(sessionId) ??
+        (await this.options.recallSession?.(sessionId)) ??
+        (await this.options.latestProject?.())
       if (projectId === undefined) {
         this.answer(res, 200, { project: null })
         return
