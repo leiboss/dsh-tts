@@ -271,3 +271,54 @@ mkdirSync(outDir, { recursive: true })
   const path = writeShot('panel-playing', client, page(serialize(tree), '试听 · 播放器下方显示当前字幕', seek), '824,560')
   console.log(`wrote ${path}`)
 }
+
+// Shot 3: the in-result strip, the surface that is misbehaving in the app.
+{
+  const client = loadClient()
+  client.noteProgress('shot-session', {
+    projectId: 'a067fb73cddd',
+    title: '只写文档',
+    done: 2,
+    total: 5,
+    pending: 3,
+    failed: 1,
+    chapters: [
+      {
+        id: 'ch-01',
+        title: '开场',
+        status: 'done',
+        durationMs: 114816,
+        audioUrl: 'file:///D:/MyApp/dsh-tts/.pack/demo-output/a067fb73cddd/audio/ch-01.mp3',
+        subtitles: 'audio/ch-01.srt',
+      },
+    ],
+  })
+  const tree = client.VoiceoverStrip({ sessionId: 'shot-session' })
+  const path = writeShot('strip-result', client, page(serialize(tree), '对话结果里的播放器与进度'), '824,220')
+  console.log(`wrote ${path}`)
+}
+// Shot 4: the same strip for a finished project.
+{
+  const client = loadClient()
+  client.noteProgress('shot-done', {
+    projectId: 'a067fb73cddd',
+    title: '只写文档',
+    done: 5,
+    total: 5,
+    pending: 0,
+    failed: 0,
+    chapters: [
+      {
+        id: 'ch-01',
+        title: '开场',
+        status: 'done',
+        durationMs: 114816,
+        audioUrl: 'file:///D:/MyApp/dsh-tts/.pack/demo-output/a067fb73cddd/audio/ch-01.mp3',
+        subtitles: 'audio/ch-01.srt',
+      },
+    ],
+  })
+  const tree = client.VoiceoverStrip({ sessionId: 'shot-done' })
+  const path = writeShot('strip-done', client, page(serialize(tree), '同一位置 · 项目已完成'), '824,220')
+  console.log(`wrote ${path}`)
+}
