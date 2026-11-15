@@ -1144,8 +1144,13 @@ window.__ModuleLoader__.load({
       const finished = pending === 0 && failed === 0
       // A finished project must say so: a full bar that never moves otherwise
       // reads as "stuck", especially when the theme's accent is red.
+      // A finished project carries its last write time: without it a stale result
+      // looks identical to a live one that happens to be at 100%.
+      const clock = formatClock(project.stateUpdatedAt)
       const statusText = finished
-        ? tr('state.done')
+        ? clock.length > 0
+          ? `${tr('state.done')} · ${clock}`
+          : tr('state.done')
         : stateWord({ ...project, chapters, pending, failed, done, total })
       // While playing, the clock is the answer; before that, the project's total.
       const timeLabel =
@@ -1211,6 +1216,7 @@ window.__ModuleLoader__.load({
         chapter === null
           ? null
           : h('audio', {
+              key: chapter.audioUrl,
               ref: audioRef,
               src: chapter.audioUrl,
               preload: 'none',
