@@ -222,9 +222,10 @@ test('the result strip mirrors the latest progress and hides when finished', asy
   const flat = collect(player)
   const control = flat.find((element) => element.type === 'button')
   assert.equal(control?.props['aria-label'], '播放')
-  const audio = flat.find((element) => element.type === 'audio')
-  assert.equal(audio?.props.src, '/voiceover/audio/ch-01.mp3')
-  assert.equal(typeof audio?.props.onTimeUpdate, 'function', 'the cue follows the audio clock')
+  // Nothing is mounted before the press: a signed URL changes on every poll, so
+  // binding it during render would remount the element and stop playback.
+  assert.equal(flat.find((element) => element.type === 'audio'), undefined)
+  assert.equal(typeof control?.props.onClick, 'function')
 
   // The clock: the project's total before playback starts.
   assert.match(JSON.stringify(player), /共 0:01/)

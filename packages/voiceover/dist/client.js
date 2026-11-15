@@ -1064,6 +1064,10 @@ window.__ModuleLoader__.load({
       const [cue, setCue] = react.useState('')
       const [paused, setPaused] = react.useState(true)
       const [elapsed, setElapsed] = react.useState(null)
+      // The audio URL is re-signed on every poll, so it is captured when the user
+      // presses play; binding src to the snapshot would remount the element every
+      // couple of seconds and stop playback.
+      const [player, setPlayer] = react.useState(null)
       const audioRef = (react.useRef ?? (() => ({ current: null })))(null)
 
       react.useEffect(() => {
@@ -1111,11 +1115,11 @@ window.__ModuleLoader__.load({
         chapters.find((entry) => typeof entry?.audioUrl === 'string' && entry.audioUrl.length > 0) ?? null
 
       react.useEffect(() => {
-        if (project === null || chapter === null) return undefined
+        if (project === null || player === null) return undefined
         let stopped = false
         const load = async () => {
           try {
-            const res = await fetch(`/voiceover/panel/${project.projectId}/subtitles/${chapter.id}`, {
+            const res = await fetch(`/voiceover/panel/${project.projectId}/subtitles/${player.id}`, {
               credentials: 'same-origin',
               cache: 'no-store',
             })
@@ -1128,7 +1132,15 @@ window.__ModuleLoader__.load({
         return () => {
           stopped = true
         }
-      }, [project?.projectId, chapter?.id])
+      }, [project?.projectId, player?.id])
+
+      react.useEffect(() => {
+        // A new project means the previous audio is no longer this row's subject.
+        setPlayer(null)
+        setCue('')
+        setElapsed(null)
+        setPaused(true)
+      }, [project?.projectId])
 
       if (typeof sessionId !== 'string' || project === null) return null
 
@@ -1154,13 +1166,19 @@ window.__ModuleLoader__.load({
         : stateWord({ ...project, chapters, pending, failed, done, total })
       // While playing, the clock is the answer; before that, the project's total.
       const timeLabel =
-        elapsed !== null && chapter !== null
-          ? `${formatDuration(elapsed)} / ${formatDuration(chapter.durationMs)}`
+        elapsed !== null && player !== null
+          ? `${formatDuration(elapsed)} / ${formatDuration(player.durationMs)}`
           : totalMs > 0
             ? tr('strip.total', { time: formatDuration(totalMs) })
             : ''
 
       const toggle = () => {
+        if (player === null) {
+          if (chapter === null) return
+          // Freeze the signed URL here, not in render.
+          setPlayer({ id: chapter.id, url: chapter.audioUrl, durationMs: chapter.durationMs })
+          return
+        }
         const audio = audioRef.current
         if (audio === null || audio === undefined) return
         if (audio.paused === true) {
@@ -1212,13 +1230,18 @@ window.__ModuleLoader__.load({
           ),
           failed > 0 ? h('span', { style: S.stripFailed }, tr('dock.failed', { count: failed })) : null,
         ),
-        h('div', { style: S.stripCue, 'aria-live': 'polite' }, cue.length > 0 ? cue : statusText),
-        chapter === null
+        h(
+          'div',
+          { style: S.stripCue, 'aria-live': 'polite' },
+          cue.length > 0 ? cue : `${statusText} · ${String(project.projectId).slice(0, 6)}`,
+        ),
+        player === null
           ? null
           : h('audio', {
-              key: chapter.audioUrl,
+              key: player.id,
               ref: audioRef,
-              src: chapter.audioUrl,
+              src: player.url,
+              autoPlay: true,
               preload: 'none',
               style: S.stripAudio,
               onTimeUpdate: (event) => {
