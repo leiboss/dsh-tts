@@ -609,6 +609,21 @@ window.__ModuleLoader__.load({
       return tr('state.preparing')
     }
 
+    /**
+     * Progress through each chapter's stages, not just finished chapters.
+     *
+     * A one-chapter job spends minutes inside synthesis, so a bar driven only by
+     * "done chapters / total" sits at 0 until it jumps to 100. The pipeline
+     * records the stage per chapter, so that is what the bar reflects.
+     */
+    const STAGE_WEIGHT = { queued: 0, adapted: 0.2, marked: 0.35, audited: 0.5, synthesized: 0.75, timed: 0.9, done: 1, failed: 1 }
+
+    function progressPercent(chapters) {
+      if (!Array.isArray(chapters) || chapters.length === 0) return 0
+      let sum = 0
+      for (const chapter of chapters) sum += STAGE_WEIGHT[chapter?.status] ?? 0
+      return Math.max(0, Math.min(100, Math.round((sum / chapters.length) * 100)))
+    }
     /** One capability pill. Neutral by default: a fallback is a mode, not a fault. */
     function chip(text) {
       return h('span', { key: text, style: S.chip }, text)
@@ -831,8 +846,9 @@ window.__ModuleLoader__.load({
       const done = typeof snap.done === 'number' ? snap.done : 0
       const failedCount = typeof snap.failed === 'number' ? snap.failed : 0
       const pending = typeof snap.pending === 'number' ? snap.pending : 0
-      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
       const chapters = Array.isArray(snap.chapters) ? snap.chapters : []
+      // Stage-weighted, so a single mid-synthesis chapter still moves the bar.
+      const pct = total > 0 ? progressPercent(chapters) : 0
       const warnings = Array.isArray(snap.warnings) ? snap.warnings : []
       const warningTotal = typeof snap.warningCount === 'number' ? snap.warningCount : warnings.length
       const capability = snap.capability ?? {}
@@ -1065,9 +1081,11 @@ window.__ModuleLoader__.load({
             if (stopped) return
             // Keep the shared store's entry when the host has nothing to add.
             if (data.project !== null && data.project !== undefined) setProject(data.project)
-            if (data.project !== null && data.project !== undefined && data.project.pending > 0) {
-              timer = setTimeout(tick, 2000)
-            }
+            const active =
+              data.project !== null && data.project !== undefined && data.project.pending > 0
+            // Fast while it runs; a slow heartbeat otherwise, so a project started
+            // later is not invisible until the next Turn renders a new strip.
+            timer = setTimeout(tick, active ? 2000 : 15000)
           } catch {
             // Offline or a non-Web host: the strip simply stays hidden.
           }
@@ -1079,6 +1097,15 @@ window.__ModuleLoader__.load({
         }
       }, [sessionId])
 
+      react.useEffect(() => {
+        if (typeof sessionId !== 'string') return undefined
+        // The panel publishes there; without this the strip would wait for its
+        // own heartbeat even though fresher data already exists.
+        return subscribeActivity(() => {
+          const entry = activity.get(sessionId)
+          if (entry !== undefined) setProject(entry)
+        })
+      }, [sessionId])
       const chapters = Array.isArray(project?.chapters) ? project.chapters : []
       const chapter =
         chapters.find((entry) => typeof entry?.audioUrl === 'string' && entry.audioUrl.length > 0) ?? null
@@ -1109,7 +1136,7 @@ window.__ModuleLoader__.load({
       const done = typeof project.done === 'number' ? project.done : 0
       const failed = typeof project.failed === 'number' ? project.failed : 0
       const pending = typeof project.pending === 'number' ? project.pending : 0
-      const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
+      const pct = total > 0 ? progressPercent(chapters) : 0
       const totalMs = chapters.reduce(
         (sum, entry) => sum + (typeof entry?.durationMs === 'number' ? entry.durationMs : 0),
         0,
@@ -1289,6 +1316,7 @@ window.__ModuleLoader__.load({
     exports.warningText = warningText
     exports.stateWord = stateWord
     exports.formatClock = formatClock
+    exports.progressPercent = progressPercent
     exports.parseSrt = parseSrt
     exports.cueAt = cueAt
     exports.VoiceoverPanel = VoiceoverPanel

@@ -401,3 +401,15 @@ test('parses SRT into cues and finds the line at a clock position', async () => 
   assert.deepEqual(parseSrt(''), [])
   assert.equal(cueAt(undefined, 0), '')
 })
+test('the bar follows chapter stages, so one chapter still moves it', async () => {
+  const client = await loadClient()
+  const progressPercent = client.progressPercent as (chapters: { status: string }[]) => number
+
+  assert.equal(progressPercent([]), 0)
+  assert.equal(progressPercent([{ status: 'queued' }]), 0)
+  // A single chapter spends most of its time in synthesis; the bar must show it.
+  assert.equal(progressPercent([{ status: 'synthesized' }]), 75)
+  assert.equal(progressPercent([{ status: 'timed' }]), 90)
+  assert.equal(progressPercent([{ status: 'done' }]), 100)
+  assert.equal(progressPercent([{ status: 'done' }, { status: 'synthesized' }]), 88)
+})
