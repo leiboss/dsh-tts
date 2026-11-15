@@ -50,3 +50,24 @@ test('the bundle patch exists and the version matches the source constant', () =
   const source = readFileSync(join(root, 'src', 'version.ts'), 'utf8')
   assert.match(source, new RegExp(`VERSION = '${manifest.version}'`), 'the daemon would report a stale version')
 })
+
+test('display metadata exists for both locales and is published', () => {
+  // Without these the plugin row falls back to the package name; the icon is
+  // resolved separately, so a package can have one and still look nameless.
+  for (const locale of ['en', 'zh']) {
+    const file = join(root, 'locale', `${locale}.json`)
+    assert.ok(existsSync(file), `locale/${locale}.json must exist`)
+    const meta = (JSON.parse(readFileSync(file, 'utf8')) as { meta: { title: string; description: string } }).meta
+    assert.ok(typeof meta.title === 'string' && meta.title.length > 0, `${locale}.meta.title must be set`)
+    assert.ok(typeof meta.description === 'string' && meta.description.length > 0, `${locale}.meta.description must be set`)
+    assert.ok(
+      manifest.exports['./locale/*.json'] !== undefined,
+      'the locale files must be exported for Plugin Manager to read them',
+    )
+    assert.ok(
+      manifest.files.some((entry) => entry.startsWith('locale/')),
+      'the locale files must be in the published file list',
+    )
+  }
+  assert.equal(manifest.icon, './icon.svg', 'a top-level icon wins over the ./icon export')
+})

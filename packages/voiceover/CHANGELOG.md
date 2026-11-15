@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4
+
+- Display metadata. The plugin row had a title only through the package-name
+  fallback because this package shipped no locale resources; `locale/en.json` and
+  `locale/zh.json` now carry `meta.title` and `meta.description`, and they are
+  exported and published.
+- `icon` is declared as a top-level manifest field, which takes priority over the
+  `./icon` export, so Plugin Manager reads it before activation.
 ## 0.3.3
 
 - The engine dependency is now `^0.3.2` instead of `^0.3.0`. Installing this
