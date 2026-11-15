@@ -57,6 +57,9 @@ window.__ModuleLoader__.load({
         'count.preparing': '准备中',
         'progress.label': '生成进度',
         'progress.value': '{total} 章中完成 {done} 章',
+        'progress.playback': '播放进度',
+        'progress.played': '已播 {played} / 共 {total}',
+        'progress.seek': '点击跳转播放位置',
         'state.runningLeft': '生成中 · 剩 {count} 章',
         'state.runningChapter': '生成中 · {id} {status}',
         'state.endedFailed': '已结束 · {count} 章失败',
@@ -129,6 +132,9 @@ window.__ModuleLoader__.load({
         'count.preparing': 'Preparing',
         'progress.label': 'Generation progress',
         'progress.value': '{done} of {total} chapters done',
+        'progress.playback': 'Playback progress',
+        'progress.played': '{played} of {total} played',
+        'progress.seek': 'Click to seek',
         'state.runningLeft': 'Running · {count} left',
         'state.runningChapter': 'Running · {id} {status}',
         'state.endedFailed': 'Ended · {count} failed',
@@ -417,6 +423,9 @@ window.__ModuleLoader__.load({
         overflow: 'hidden',
       },
       stripFill: { height: '100%', background: 'var(--dsw-alias-brand-primary)' },
+      // In this slot the bar is either a job indicator or the player's timeline.
+      // A timeline is a control, so it is taller and clickable.
+      stripTrackTimeline: { height: 6, cursor: 'pointer' },
       stripFailed: { color: 'var(--dsw-alias-state-error-primary)', whiteSpace: 'nowrap' },
       stripHint: { whiteSpace: 'nowrap', opacity: 0.7 },
     }
@@ -638,11 +647,67 @@ window.__ModuleLoader__.load({
      */
     const STAGE_WEIGHT = { queued: 0, adapted: 0.2, marked: 0.35, audited: 0.5, synthesized: 0.75, timed: 0.9, done: 1, failed: 1 }
 
-    function progressPercent(chapters) {
+    /**
+     * Integer percent of the job done, weighting each chapter by its stage.
+     *
+     * The denominator is the project's chapter count, not the number of chapter
+     * records: a run that has finished one chapter of eight has one record, and
+     * dividing by that record count reported 100% while seven were still queued.
+     */
+    function progressPercent(chapters, total) {
       if (!Array.isArray(chapters) || chapters.length === 0) return 0
+      const denominator = Math.max(chapters.length, typeof total === 'number' ? total : 0)
       let sum = 0
       for (const chapter of chapters) sum += STAGE_WEIGHT[chapter?.status] ?? 0
-      return Math.max(0, Math.min(100, Math.round((sum / chapters.length) * 100)))
+      return Math.max(0, Math.min(100, Math.round((sum / denominator) * 100)))
+    }
+
+    /**
+     * What the strip's thin bar shows right now.
+     *
+     * While chapters are still pending the bar is the job's progress -- unless
+     * audio is actually playing, in which case the clock is what the row is
+     * reporting. Once nothing is pending the bar is always the player's
+     * timeline; leaving a full bar next to the play button reads as a stuck
+     * player, which is how this row was reported.
+     *
+     * @param {{ pending?: number, total?: number, chapters?: unknown[], player?: unknown, elapsed?: number | null, playing?: boolean }} input
+     * @returns {{ mode: 'generate' | 'playback', percent: number }}
+     */
+    function stripBar(input) {
+      const pending = typeof input?.pending === 'number' ? input.pending : 0
+      const total = typeof input?.total === 'number' ? input.total : 0
+      const chapters = Array.isArray(input?.chapters) ? input.chapters : []
+      const player = input?.player ?? null
+      const elapsed = typeof input?.elapsed === 'number' ? input.elapsed : 0
+      const playing = input?.playing === true
+      const playable = chapters.some(
+        (chapter) => typeof chapter?.audioUrl === 'string' && chapter.audioUrl.length > 0,
+      )
+      const jobDone = pending <= 0
+      if (!playable || (!jobDone && !playing)) {
+        return { mode: 'generate', percent: total > 0 ? progressPercent(chapters, total) : 0 }
+      }
+      const durationMs = typeof player?.durationMs === 'number' ? player.durationMs : 0
+      const percent = durationMs > 0 ? Math.max(0, Math.min(100, (elapsed / durationMs) * 100)) : 0
+      return { mode: 'playback', percent }
+    }
+
+    /**
+     * The strip's second line: the current subtitle, else the job's own words.
+     *
+     * Between two cues a subtitle track is empty for a moment. Falling back to
+     * the status there made "已完成 · 15:15" flash between every line while the
+     * audio played, so during playback the line is reserved instead of reused.
+     *
+     * @param {{ cue?: string, playing?: boolean, status?: string }} input
+     * @returns {string}
+     */
+    function stripLine(input) {
+      const cue = typeof input?.cue === 'string' ? input.cue : ''
+      if (cue.length > 0) return cue
+      if (input?.playing === true) return '\u00A0'
+      return typeof input?.status === 'string' ? input.status : ''
     }
     /** One capability pill. Neutral by default: a fallback is a mode, not a fault. */
     function chip(text) {
@@ -867,8 +932,9 @@ window.__ModuleLoader__.load({
       const failedCount = typeof snap.failed === 'number' ? snap.failed : 0
       const pending = typeof snap.pending === 'number' ? snap.pending : 0
       const chapters = Array.isArray(snap.chapters) ? snap.chapters : []
-      // Stage-weighted, so a single mid-synthesis chapter still moves the bar.
-      const pct = total > 0 ? progressPercent(chapters) : 0
+      // Stage-weighted over the planned chapter count, so one finished chapter of
+      // eight reads as 12% and not as a full bar.
+      const pct = total > 0 ? progressPercent(chapters, total) : 0
       const warnings = Array.isArray(snap.warnings) ? snap.warnings : []
       const warningTotal = typeof snap.warningCount === 'number' ? snap.warningCount : warnings.length
       const capability = snap.capability ?? {}
@@ -1170,14 +1236,18 @@ window.__ModuleLoader__.load({
       const done = typeof project.done === 'number' ? project.done : 0
       const failed = typeof project.failed === 'number' ? project.failed : 0
       const pending = typeof project.pending === 'number' ? project.pending : 0
-      const pct = total > 0 ? progressPercent(chapters) : 0
+      // Job progress while chapters are pending, the audio clock afterwards.
+      const playing = player !== null && paused === false
+      const bar = stripBar({ pending, total, chapters, player, elapsed, playing })
+      const pct = bar.percent
+      const timeline = bar.mode === 'playback'
       const totalMs = chapters.reduce(
         (sum, entry) => sum + (typeof entry?.durationMs === 'number' ? entry.durationMs : 0),
         0,
       )
       const finished = pending === 0 && failed === 0
-      // A finished project must say so: a full bar that never moves otherwise
-      // reads as "stuck", especially when the theme's accent is red.
+      // A finished project must say so in words: the bar becomes the player's
+      // timeline, so it no longer announces completion by itself.
       // A finished project carries its last write time: without it a stale result
       // looks identical to a live one that happens to be at 100%.
       const clock = formatClock(project.stateUpdatedAt)
@@ -1211,6 +1281,37 @@ window.__ModuleLoader__.load({
         }
       }
 
+      /**
+       * Seek inside the strip's own player, or start it.
+       *
+       * The bar becomes the timeline once the project is finished; without this
+       * the row would show playback and still refuse to be moved.
+       */
+      const scrub = (event) => {
+        if (player === null) {
+          if (chapter !== null) {
+            setPlayer({ id: chapter.id, url: chapter.audioUrl, durationMs: chapter.durationMs })
+          }
+          return
+        }
+        const audio = audioRef.current
+        if (audio === null || audio === undefined) return
+        const rect = event?.currentTarget?.getBoundingClientRect?.()
+        const width = typeof rect?.width === 'number' ? rect.width : 0
+        if (width <= 0) return
+        const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / width))
+        const seconds =
+          Number.isFinite(audio.duration) && audio.duration > 0
+            ? audio.duration
+            : (typeof player.durationMs === 'number' ? player.durationMs : 0) / 1000
+        if (seconds <= 0) return
+        try {
+          audio.currentTime = ratio * seconds
+        } catch {
+          // Metadata has not arrived yet; the next click retries.
+        }
+      }
+
       try {
         return h(
         'div',
@@ -1237,16 +1338,37 @@ window.__ModuleLoader__.load({
           timeLabel.length === 0 ? null : h('span', { style: S.stripTime }, timeLabel),
           h(
             'div',
-            { style: S.stripTrack, 'aria-hidden': 'true' },
+            timeline
+              ? {
+                  style: { ...S.stripTrack, ...S.stripTrackTimeline },
+                  role: 'progressbar',
+                  'aria-label': tr('progress.playback'),
+                  'aria-valuemin': 0,
+                  'aria-valuemax': 100,
+                  'aria-valuenow': Math.round(pct),
+                  'aria-valuetext':
+                    player === null
+                      ? tr('progress.seek')
+                      : tr('progress.played', {
+                          played: formatDuration(elapsed) || '0:00',
+                          total: formatDuration(player.durationMs),
+                        }),
+                  title: tr('progress.seek'),
+                  onClick: scrub,
+                }
+              : { style: S.stripTrack, 'aria-hidden': 'true' },
             h('div', {
               style: {
                 ...S.stripFill,
                 width: `${pct}%`,
                 // Finished reads as success rather than as the accent the theme
                 // uses everywhere, so a full bar never looks like an error.
-                background: finished
-                  ? 'var(--dsw-alias-state-success-primary)'
-                  : 'var(--dsw-alias-brand-primary)',
+                // A timeline is a player control, so it uses the accent.
+                background: timeline
+                  ? 'var(--dsw-alias-brand-primary)'
+                  : finished
+                    ? 'var(--dsw-alias-state-success-primary)'
+                    : 'var(--dsw-alias-brand-primary)',
               },
             }),
           ),
@@ -1255,7 +1377,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: S.stripCue, 'aria-live': 'polite' },
-          cue.length > 0 ? cue : `${statusText} · ${String(project.projectId).slice(0, 6)}`,
+          stripLine({ cue, playing, status: `${statusText} · ${String(project.projectId).slice(0, 6)}` }),
         ),
         player === null
           ? null
@@ -1368,6 +1490,8 @@ window.__ModuleLoader__.load({
     exports.stateWord = stateWord
     exports.formatClock = formatClock
     exports.progressPercent = progressPercent
+    exports.stripBar = stripBar
+    exports.stripLine = stripLine
     exports.newerProject = newerProject
     exports.parseSrt = parseSrt
     exports.cueAt = cueAt

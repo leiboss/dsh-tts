@@ -238,6 +238,61 @@ test('the result strip mirrors the latest progress and hides when finished', asy
   assert.equal(typeof cueLine?.children[0], 'string')
 })
 
+test('the strip bar follows the audio clock once nothing is left to generate', async () => {
+  const client = await loadClient()
+  const stripBar = client.stripBar as (input: Record<string, unknown>) => { mode: string; percent: number }
+  const chapter = { id: 'ch-01', status: 'done', durationMs: 1000, audioUrl: '/voiceover/audio/x' }
+
+  // Still generating: the bar is the job's own progress, measured against the
+  // planned chapter count rather than the number of records on disk.
+  assert.deepEqual(stripBar({ pending: 2, total: 4, chapters: [{ status: 'done' }, { status: 'queued' }] }), {
+    mode: 'generate',
+    percent: 25,
+  })
+  // Playing while later chapters still generate: the row is reporting the clock,
+  // so the bar must follow it instead of sitting on the job's percentage.
+  assert.deepEqual(
+    stripBar({ pending: 2, total: 4, chapters: [chapter], player: { durationMs: 1000 }, elapsed: 250, playing: true }),
+    { mode: 'playback', percent: 25 },
+  )
+  // Nothing pending: a full bar next to the play button is what a user reads as
+  // a stuck player, so the bar starts empty and follows playback.
+  assert.deepEqual(stripBar({ pending: 0, total: 1, chapters: [chapter], player: { durationMs: 1000 } }), {
+    mode: 'playback',
+    percent: 0,
+  })
+  assert.deepEqual(
+    stripBar({ pending: 0, total: 1, chapters: [chapter], player: { durationMs: 1000 }, elapsed: 500, playing: true }),
+    { mode: 'playback', percent: 50 },
+  )
+  // Never beyond the track, never below it.
+  assert.equal(
+    stripBar({ pending: 0, total: 1, chapters: [chapter], player: { durationMs: 1000 }, elapsed: 9000 }).percent,
+    100,
+  )
+  assert.equal(stripBar({ pending: 0, total: 1, chapters: [chapter], player: { durationMs: 1000 }, elapsed: -5 }).percent, 0)
+  // An unknown duration cannot become a fake position.
+  assert.deepEqual(stripBar({ pending: 0, total: 1, chapters: [chapter] }), { mode: 'playback', percent: 0 })
+  // No playable chapter: there is nothing to play, so generation stays the subject.
+  assert.deepEqual(stripBar({ pending: 0, total: 1, chapters: [{ status: 'failed' }] }), {
+    mode: 'generate',
+    percent: 100,
+  })
+})
+
+test('the strip keeps the status out of the subtitle line while playing', async () => {
+  const client = await loadClient()
+  const stripLine = client.stripLine as (input: Record<string, unknown>) => string
+
+  assert.equal(stripLine({ cue: '第一句', playing: true, status: '已完成 · 15:15:14' }), '第一句')
+  // Between two cues the track is empty for a moment. Reusing the line for the
+  // status there made "已完成 · 15:15:14" flash between every subtitle.
+  assert.equal(stripLine({ cue: '', playing: true, status: '已完成 · 15:15:14' }), '\u00A0')
+  // Paused or finished, the row goes back to reporting the job itself.
+  assert.equal(stripLine({ cue: '', playing: false, status: '已完成 · 15:15:14' }), '已完成 · 15:15:14')
+  assert.equal(stripLine({}), '')
+})
+
 test('distinguishes running, done and ended-with-failures', async () => {
   const client = await loadClient()
   const stateWord = client.stateWord as (snapshot: Record<string, unknown>) => string
@@ -404,7 +459,7 @@ test('parses SRT into cues and finds the line at a clock position', async () => 
 })
 test('the bar follows chapter stages, so one chapter still moves it', async () => {
   const client = await loadClient()
-  const progressPercent = client.progressPercent as (chapters: { status: string }[]) => number
+  const progressPercent = client.progressPercent as (chapters: { status: string }[], total?: number) => number
 
   assert.equal(progressPercent([]), 0)
   assert.equal(progressPercent([{ status: 'queued' }]), 0)
@@ -413,6 +468,11 @@ test('the bar follows chapter stages, so one chapter still moves it', async () =
   assert.equal(progressPercent([{ status: 'timed' }]), 90)
   assert.equal(progressPercent([{ status: 'done' }]), 100)
   assert.equal(progressPercent([{ status: 'done' }, { status: 'synthesized' }]), 88)
+  // The denominator is the planned chapter count: one finished chapter of four is
+  // a quarter of the job, not a full bar. This is what made the bar sit at 100%.
+  assert.equal(progressPercent([{ status: 'done' }], 4), 25)
+  assert.equal(progressPercent([{ status: 'done' }, { status: 'queued' }], 4), 25)
+  assert.equal(progressPercent([{ status: 'done' }], 1), 100)
 })
 test('the freshest project wins, whatever polled last', async () => {
   const client = await loadClient()
