@@ -83,6 +83,7 @@ window.__ModuleLoader__.load({
         'audio.label': '{id} 音频',
         'action.play': '播放',
         'action.pause': '暂停',
+        'strip.total': '共 {time}',
         'action.stop': '停止',
         'action.retry': '重试',
         'action.retryAria': '重跑 {id} {title}',
@@ -154,6 +155,7 @@ window.__ModuleLoader__.load({
         'audio.label': '{id} audio',
         'action.play': 'Play',
         'action.pause': 'Pause',
+        'strip.total': '{time} total',
         'action.stop': 'Stop',
         'action.retry': 'Retry',
         'action.retryAria': 'Retry {id} {title}',
@@ -335,7 +337,13 @@ window.__ModuleLoader__.load({
       },
       playerWrap: { display: 'grid', gap: 4 },
       player: { width: '100%', height: 32 },
-      cue: { fontSize: FONT, lineHeight: 1.5, color: 'var(--dsw-alias-label-primary)', overflowWrap: 'anywhere' },
+      cue: {
+        fontSize: FONT,
+        lineHeight: 1.5,
+        minHeight: '1.5em',
+        color: 'var(--dsw-alias-label-primary)',
+        overflowWrap: 'anywhere',
+      },
       retryBtn: {
         fontSize: FONT_META,
         padding: '0 6px',
@@ -386,6 +394,7 @@ window.__ModuleLoader__.load({
       stripCue: {
         fontSize: FONT,
         lineHeight: 1.5,
+        minHeight: '1.5em',
         color: 'var(--dsw-alias-label-primary)',
         overflowWrap: 'anywhere',
       },
@@ -398,6 +407,7 @@ window.__ModuleLoader__.load({
         maxWidth: 180,
       },
       stripCount: { whiteSpace: 'nowrap' },
+      stripTime: { whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' },
       stripTrack: {
         flex: 1,
         height: 4,
@@ -985,7 +995,7 @@ window.__ModuleLoader__.load({
                   setCue('')
                 },
               }),
-              cue.length === 0 ? null : h('div', { style: S.cue }, cue),
+              h('div', { style: S.cue }, cue.length === 0 ? '\u00A0' : cue),
             ),
         failedCount > 0
           ? h(
@@ -1036,6 +1046,7 @@ window.__ModuleLoader__.load({
       const [cues, setCues] = react.useState([])
       const [cue, setCue] = react.useState('')
       const [paused, setPaused] = react.useState(true)
+      const [elapsed, setElapsed] = react.useState(null)
       const audioRef = (react.useRef ?? (() => ({ current: null })))(null)
 
       react.useEffect(() => {
@@ -1097,6 +1108,17 @@ window.__ModuleLoader__.load({
       const done = typeof project.done === 'number' ? project.done : 0
       const failed = typeof project.failed === 'number' ? project.failed : 0
       const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
+      const totalMs = chapters.reduce(
+        (sum, entry) => sum + (typeof entry?.durationMs === 'number' ? entry.durationMs : 0),
+        0,
+      )
+      // While playing, the clock is the answer; before that, the project's total.
+      const timeLabel =
+        elapsed !== null && chapter !== null
+          ? `${formatDuration(elapsed)} / ${formatDuration(chapter.durationMs)}`
+          : totalMs > 0
+            ? tr('strip.total', { time: formatDuration(totalMs) })
+            : ''
 
       const toggle = () => {
         const audio = audioRef.current
@@ -1131,6 +1153,7 @@ window.__ModuleLoader__.load({
               ),
           h('span', { style: S.stripTitle }, project.title || tr('card.title')),
           h('span', { style: S.stripCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
+          timeLabel.length === 0 ? null : h('span', { style: S.stripTime }, timeLabel),
           h(
             'div',
             { style: S.stripTrack, 'aria-hidden': 'true' },
@@ -1138,7 +1161,7 @@ window.__ModuleLoader__.load({
           ),
           failed > 0 ? h('span', { style: S.stripFailed }, tr('dock.failed', { count: failed })) : null,
         ),
-        cue.length === 0 ? null : h('div', { style: S.stripCue, 'aria-live': 'polite' }, cue),
+        h('div', { style: S.stripCue, 'aria-live': 'polite' }, cue.length === 0 ? '\u00A0' : cue),
         chapter === null
           ? null
           : h('audio', {
@@ -1146,12 +1169,17 @@ window.__ModuleLoader__.load({
               src: chapter.audioUrl,
               preload: 'none',
               style: S.stripAudio,
-              onTimeUpdate: (event) => setCue(cueAt(cues, event.currentTarget.currentTime * 1000)),
+              onTimeUpdate: (event) => {
+                const audio = event.currentTarget
+                setElapsed(audio.currentTime * 1000)
+                setCue(cueAt(cues, audio.currentTime * 1000))
+              },
               onPlay: () => setPaused(false),
               onPause: () => setPaused(true),
               onEnded: () => {
                 setPaused(true)
                 setCue('')
+                setElapsed(null)
               },
             }),
       )

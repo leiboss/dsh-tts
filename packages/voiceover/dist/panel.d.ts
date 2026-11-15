@@ -22,6 +22,11 @@ export interface PanelRouteOptions {
      * panel being mounted to learn what is running; the host answers instead.
      */
     projectForSession?: (sessionId: string) => string | undefined;
+    /**
+     * Fallback when the session map has no entry (for example after a restart):
+     * the most recently updated project on disk.
+     */
+    latestProject?: () => Promise<string | undefined>;
     debug?: (message: string) => void;
 }
 /**

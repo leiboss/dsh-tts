@@ -222,6 +222,15 @@ test('the result strip mirrors the latest progress and hides when finished', asy
   const audio = flat.find((element) => element.type === 'audio')
   assert.equal(audio?.props.src, '/voiceover/audio/ch-01.mp3')
   assert.equal(typeof audio?.props.onTimeUpdate, 'function', 'the cue follows the audio clock')
+
+  // The clock: the project's total before playback starts.
+  assert.match(JSON.stringify(player), /共 0:01/)
+
+  // The cue line reserves its height even with no current cue, so the row does
+  // not jump in the gap between two subtitles.
+  const cueLine = flat.find((element) => (element.props.style as { minHeight?: string } | undefined)?.minHeight === '1.5em')
+  assert.ok(cueLine, 'the cue line always exists')
+  assert.equal(cueLine?.children[0], '\u00A0')
 })
 
 test('distinguishes running, done and ended-with-failures', async () => {

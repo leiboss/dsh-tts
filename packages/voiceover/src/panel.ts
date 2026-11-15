@@ -41,6 +41,11 @@ export interface PanelRouteOptions {
    * panel being mounted to learn what is running; the host answers instead.
    */
   projectForSession?: (sessionId: string) => string | undefined
+  /**
+   * Fallback when the session map has no entry (for example after a restart):
+   * the most recently updated project on disk.
+   */
+  latestProject?: () => Promise<string | undefined>
   debug?: (message: string) => void
 }
 
@@ -176,7 +181,8 @@ export class PanelRoute {
     // the in-result strip works even when the tool call is collapsed.
     const sessionMatch = /^sessions\/([A-Za-z0-9_-]{1,80})\.json$/.exec(name)
     if (sessionMatch !== null) {
-      const projectId = this.options.projectForSession?.(sessionMatch[1] ?? '')
+      const projectId =
+        this.options.projectForSession?.(sessionMatch[1] ?? '') ?? (await this.options.latestProject?.())
       if (projectId === undefined) {
         this.answer(res, 200, { project: null })
         return

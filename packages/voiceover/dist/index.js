@@ -1,7 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import z from '@deepseek-ai/schemastery';
 import { AudioRoute } from '@leiboss/dsh-tts';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { httpCompleter } from "./llm.js";
@@ -377,6 +377,7 @@ function mountWebSurfaces(ctx, config, env = process.env) {
         ...(connection === undefined ? {} : { connection }),
         audioUrlFor: (filePath) => audio.urlFor(filePath),
         projectForSession: (sessionId) => sessionProjects.get(sessionId),
+        latestProject: latestProjectResolver(outputDir),
         onRerun: (projectId, chapter) => startRerun(ctx, config, outputDir, projectId, chapter === undefined ? undefined : [chapter]),
         debug,
     });
@@ -431,6 +432,42 @@ function registerSkill(ctx) {
  * answers `sessions/<sessionId>.json` from this map.
  */
 const sessionProjects = new Map();
+/**
+ * The most recently updated project, with a short cache.
+ *
+ * The in-memory session map is empty after a restart, so a client that already
+ * knows a project id must still find it. A directory scan of state mtimes is
+ * cheap for a desktop workspace and keeps the strip working across restarts.
+ */
+function latestProjectResolver(outputDir) {
+    let cached;
+    return async () => {
+        const now = Date.now();
+        if (cached !== undefined && now - cached.at < 5000)
+            return cached.id;
+        let best;
+        try {
+            const entries = await readdir(outputDir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (!entry.isDirectory() || !/^[0-9a-f]{8,24}$/.test(entry.name))
+                    continue;
+                try {
+                    const info = await stat(join(outputDir, entry.name, 'state', 'state.json'));
+                    if (best === undefined || info.mtimeMs > best.at)
+                        best = { id: entry.name, at: info.mtimeMs };
+                }
+                catch {
+                    // A project without state is not a candidate.
+                }
+            }
+        }
+        catch {
+            // Missing output directory: nothing to offer.
+        }
+        cached = { at: now, id: best?.id };
+        return best?.id;
+    };
+}
 export function apply(ctx, config = {}) {
     for (const tool of createVoiceoverTools(ctx, config)) {
         ctx.tools.register(tool);
