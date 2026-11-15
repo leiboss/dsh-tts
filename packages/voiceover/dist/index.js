@@ -8,6 +8,7 @@ import { httpCompleter } from "./llm.js";
 import { PanelRoute } from "./panel.js";
 import { rerunProject } from "./operations.js";
 import { normalizeSource, projectKey, runProject } from "./pipeline.js";
+import { VOICEOVER_SKILL } from "./skill.js";
 import { readJson } from "./util.js";
 export const name = 'dsh-voiceover';
 /** The tool registry must exist before `apply` runs. */
@@ -401,10 +402,34 @@ function mountWebSurfaces(ctx, config, env = process.env) {
     });
 }
 /** Mount the tools. Registration is fiber-owned, so unloading cleans up. */
+/**
+ * Offer the agent a skill, not just tools.
+ *
+ * Tools say what exists; a skill says when to reach for it. Without this the
+ * model tends to call `tts_generate` once per paragraph, which produces loose
+ * files with no subtitles and no resume. Optional on purpose: a host without the
+ * skills service still gets the tools.
+ */
+function registerSkill(ctx) {
+    const skills = typeof ctx.get === 'function' ? ctx.get('skills') : undefined;
+    if (skills === undefined || skills === null)
+        return;
+    const register = skills.register;
+    if (typeof register !== 'function')
+        return;
+    ctx.effect(() => register.call(skills, {
+        name: VOICEOVER_SKILL.name,
+        description: VOICEOVER_SKILL.description,
+        whenToUse: VOICEOVER_SKILL.whenToUse,
+        content: VOICEOVER_SKILL.content,
+        invocation: { modelInvocable: true, userInvocable: true },
+    }));
+}
 export function apply(ctx, config = {}) {
     for (const tool of createVoiceoverTools(ctx, config)) {
         ctx.tools.register(tool);
     }
+    registerSkill(ctx);
     mountWebSurfaces(ctx, config);
 }
 //# sourceMappingURL=index.js.map

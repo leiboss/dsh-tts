@@ -235,3 +235,35 @@ test('voiceover_rerun validates the chapter id and returns immediately', async (
     await removeWithRetry(root)
   }
 })
+
+test('offers a skill so the agent does not stitch tts_generate calls', () => {
+  const registered: Record<string, unknown>[] = []
+  const { ctx } = fakeContext()
+  const withSkills = {
+    ...ctx,
+    get: (key: string) =>
+      key === 'skills'
+        ? {
+            register: (skill: Record<string, unknown>) => {
+              registered.push(skill)
+              return () => {}
+            },
+          }
+        : undefined,
+  } as unknown as Context
+
+  apply(withSkills, {})
+  assert.equal(registered.length, 1)
+  assert.equal(registered[0]?.name, 'voiceover')
+  assert.match(String(registered[0]?.description), /chaptered audio/)
+  assert.match(String(registered[0]?.content), /tts_generate/)
+  assert.match(String(registered[0]?.content), /voiceover_create/)
+  // The whole point: the skill must forbid the per-paragraph loop.
+  assert.match(String(registered[0]?.content), /Never call `tts_generate` in a loop/)
+})
+
+test('apply still works on a host without a skills service', () => {
+  const { ctx, registered } = fakeContext()
+  apply(ctx, {})
+  assert.equal(registered.length, 4, 'the four tools are registered regardless')
+})

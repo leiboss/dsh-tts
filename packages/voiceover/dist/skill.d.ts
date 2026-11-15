@@ -1,0 +1,15 @@
+/**
+ * The skill the agent sees in its catalog.
+ *
+ * Tools alone tell the model *what* exists; a skill tells it *when* to reach for
+ * it and which habit to avoid. The habit that matters here is calling
+ * `tts_generate` once per paragraph: that produces a pile of files instead of a
+ * resumable project, and it is what a model does by default without guidance.
+ */
+export declare const VOICEOVER_SKILL: {
+    readonly name: "voiceover";
+    readonly description: "Turn a long document into chaptered audio files with subtitles, a manifest, and resumable progress.";
+    readonly whenToUse: "Use when the user wants a document spoken end to end: an audiobook, a podcast episode from notes, a course chapter, or a spoken version of a long article. Do not use for a single sentence or a one-line reply.";
+    readonly content: "# Voiceover: a document, not a sentence\n\nThis plugin turns one document into a set of chapter audio files, subtitles, and\na manifest. It plans chapters, adapts the text for speaking (when a model is\nconfigured), synthesizes, aligns subtitles, and keeps a resumable state file.\n\n## When to use it\n\n- The user hands you a document and wants it spoken: audiobook, podcast, course\n  chapter, long article.\n- The output should be chaptered files with subtitles, not one monolithic mp3.\n\n## When not to use it\n\n- One sentence, a notification, a short reply: call `tts_generate` instead.\n- Never call `tts_generate` in a loop over paragraphs. That produces N loose\n  files, loses resume, and has no subtitles or manifest.\n\n## Workflow\n\n1. `voiceover_create({ sourcePath })` — prefer a file path for anything longer\n   than a few paragraphs, so the text never enters the conversation. It returns\n   immediately with a `projectId`; the run continues in the background.\n2. Do not poll in a loop. Tell the user the project started and that progress\n   shows in the panel under the tool call and in the strip under your reply.\n   Call `voiceover_status({ projectId })` only when the user asks.\n3. On failure, `voiceover_rerun({ projectId })` resumes unfinished chapters;\n   `voiceover_rerun({ projectId, chapter: 'ch-03' })` retries one.\n4. When the user wants the files, call `voiceover_export({ projectId })` and\n   report the absolute paths.\n\n## Reading the result honestly\n\n- `capability.llm=false` means no model is configured: chapters are split by\n  length and the text is read as written. Say that instead of promising a\n  rewrite.\n- A chapter's error code is the actionable part: `UPSTREAM_THROTTLED` means wait\n  and retry, `SPAWN_EPERM` means the sandbox blocked a process,\n  `OUTPUT_DIR_NOT_WRITABLE` means permissions.\n- Subtitles are sidecar `.srt` files. Windows' built-in player does not load\n  them; VLC does. The panel shows the current line while playing.\n- Re-running the same source with the same settings reuses the project: finished\n  chapters are skipped. That is the intended way to resume, not a new project.\n";
+};
+//# sourceMappingURL=skill.d.ts.map

@@ -2,6 +2,10 @@
 
 ## 0.3.2
 
+- A skill (`voiceover`) registered through `ctx.skills`, so the agent knows when a
+  document should become a project instead of a pile of `tts_generate` calls. The
+  body forbids the per-paragraph loop and explains the resume and export steps.
+  Registration is optional: a host without the skills service still gets the tools.
 - A progress strip in the conversation result. Tool views render inside the
   collapsed process group, so a running job was invisible unless the call was
   expanded. The strip registers into `conversation.chat.turnTail`, which renders

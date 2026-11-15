@@ -55,6 +55,5 @@ export interface VoiceoverConfig {
 export declare function createVoiceoverTools(ctx: Context, config: VoiceoverConfig, env?: NodeJS.ProcessEnv): ToolDefinition[];
 /** Route prefix for per-chapter audio; distinct from the engine's own prefix. */
 export declare const VOICEOVER_AUDIO_PREFIX = "/voiceover/audio";
-/** Mount the tools. Registration is fiber-owned, so unloading cleans up. */
 export declare function apply(ctx: Context, config?: VoiceoverConfig): void;
 //# sourceMappingURL=index.d.ts.map

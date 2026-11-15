@@ -16,6 +16,7 @@ import { httpCompleter, type Completer } from './llm.ts'
 import { PanelRoute, type ConnectionFence, type HttpRouteRegistrar } from './panel.ts'
 import { rerunProject } from './operations.ts'
 import { normalizeSource, projectKey, runProject, type PipelineDeps, type ProjectState, type StyleProfile } from './pipeline.ts'
+import { VOICEOVER_SKILL } from './skill.ts'
 import type { SynthResult, Synthesizer } from './types.ts'
 import { readJson } from './util.ts'
 
@@ -485,9 +486,34 @@ function mountWebSurfaces(ctx: Context, config: VoiceoverConfig, env: NodeJS.Pro
 }
 
 /** Mount the tools. Registration is fiber-owned, so unloading cleans up. */
+/**
+ * Offer the agent a skill, not just tools.
+ *
+ * Tools say what exists; a skill says when to reach for it. Without this the
+ * model tends to call `tts_generate` once per paragraph, which produces loose
+ * files with no subtitles and no resume. Optional on purpose: a host without the
+ * skills service still gets the tools.
+ */
+function registerSkill(ctx: Context): void {
+  const skills = typeof ctx.get === 'function' ? ctx.get('skills') : undefined
+  if (skills === undefined || skills === null) return
+  const register = (skills as { register?: (skill: unknown) => () => void }).register
+  if (typeof register !== 'function') return
+  ctx.effect(() =>
+    register.call(skills, {
+      name: VOICEOVER_SKILL.name,
+      description: VOICEOVER_SKILL.description,
+      whenToUse: VOICEOVER_SKILL.whenToUse,
+      content: VOICEOVER_SKILL.content,
+      invocation: { modelInvocable: true, userInvocable: true },
+    }),
+  )
+}
+
 export function apply(ctx: Context, config: VoiceoverConfig = {}): void {
   for (const tool of createVoiceoverTools(ctx, config)) {
     ctx.tools.register(tool)
   }
+  registerSkill(ctx)
   mountWebSurfaces(ctx, config)
 }
