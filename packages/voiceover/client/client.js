@@ -1108,11 +1108,18 @@ window.__ModuleLoader__.load({
       const total = typeof project.total === 'number' ? project.total : 0
       const done = typeof project.done === 'number' ? project.done : 0
       const failed = typeof project.failed === 'number' ? project.failed : 0
+      const pending = typeof project.pending === 'number' ? project.pending : 0
       const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
       const totalMs = chapters.reduce(
         (sum, entry) => sum + (typeof entry?.durationMs === 'number' ? entry.durationMs : 0),
         0,
       )
+      const finished = pending === 0 && failed === 0
+      // A finished project must say so: a full bar that never moves otherwise
+      // reads as "stuck", especially when the theme's accent is red.
+      const statusText = finished
+        ? tr('state.done')
+        : stateWord({ ...project, chapters, pending, failed, done, total })
       // While playing, the clock is the answer; before that, the project's total.
       const timeLabel =
         elapsed !== null && chapter !== null
@@ -1159,11 +1166,21 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { style: S.stripTrack, 'aria-hidden': 'true' },
-            h('div', { style: { ...S.stripFill, width: `${pct}%` } }),
+            h('div', {
+              style: {
+                ...S.stripFill,
+                width: `${pct}%`,
+                // Finished reads as success rather than as the accent the theme
+                // uses everywhere, so a full bar never looks like an error.
+                background: finished
+                  ? 'var(--dsw-alias-state-success-primary)'
+                  : 'var(--dsw-alias-brand-primary)',
+              },
+            }),
           ),
           failed > 0 ? h('span', { style: S.stripFailed }, tr('dock.failed', { count: failed })) : null,
         ),
-        h('div', { style: S.stripCue, 'aria-live': 'polite' }, cue.length === 0 ? '\u00A0' : cue),
+        h('div', { style: S.stripCue, 'aria-live': 'polite' }, cue.length > 0 ? cue : statusText),
         chapter === null
           ? null
           : h('audio', {

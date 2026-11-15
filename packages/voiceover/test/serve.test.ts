@@ -133,7 +133,8 @@ test('the daemon creates a project, reports progress and serves the manifest', a
 
     // Wait for the background run to finish.
     let snapshot: Record<string, unknown> | undefined
-    for (let i = 0; i < 100; i += 1) {
+    // Generous: the whole suite runs several servers in parallel.
+    for (let i = 0; i < 200; i += 1) {
       const res = await fetch(`${base}/v1/projects/${projectId}`, { headers: auth })
       if (res.status === 200) {
         snapshot = (await res.json()) as Record<string, unknown>

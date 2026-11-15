@@ -187,7 +187,10 @@ test('the result strip mirrors the latest progress and hides when finished', asy
   const finished = JSON.stringify(Dock({ sessionId: 'dock-session' }))
   assert.match(finished, /只写文档/)
   assert.match(finished, /5\/5 章/)
+  assert.match(finished, /已完成/, 'a finished project must say so')
   assert.doesNotMatch(finished, /章失败/)
+  // A full bar in the accent colour reads as an error when the theme is red.
+  assert.match(finished, /state-success-primary/)
 
   // Failures are actionable, so the strip stays and names the count.
   noteProgress('dock-session', { ...snapshot, done: 3, pending: 0, failed: 2 })
@@ -230,7 +233,8 @@ test('the result strip mirrors the latest progress and hides when finished', asy
   // not jump in the gap between two subtitles.
   const cueLine = flat.find((element) => (element.props.style as { minHeight?: string } | undefined)?.minHeight === '1.5em')
   assert.ok(cueLine, 'the cue line always exists')
-  assert.equal(cueLine?.children[0], '\u00A0')
+  // With no cue it carries the status, so the height is stable either way.
+  assert.equal(typeof cueLine?.children[0], 'string')
 })
 
 test('distinguishes running, done and ended-with-failures', async () => {
