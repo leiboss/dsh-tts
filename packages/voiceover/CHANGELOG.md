@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.6
+
+- **One player per session, not one per reply.** The strip was registered in
+  `conversation.chat.turnTail`, which renders on every completed Turn, so a
+  project that had finished put an identical player under every exchange in the
+  conversation. It now lives in `conversation.composer.dock`: ambient, rendered
+  once per session, and still on screen after the Turn that started the job has
+  scrolled away.
+
 ## 0.3.5
 
 - **The progress strip is a player once the job is done.** The thin bar in the

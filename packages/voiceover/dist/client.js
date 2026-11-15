@@ -1133,13 +1133,17 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Player and progress line for the conversation result.
+     * Ambient player and progress line under the composer.
      *
      * Tool views render inside the collapsed process group, and a collapsed row
      * is not mounted at all, so this surface cannot wait for the panel to poll.
      * It asks the host what this session is running (`sessions/<id>.json`),
      * loads the first playable chapter, and follows the audio clock to show the
      * current subtitle line.
+     *
+     * It lives in the composer dock rather than in a Turn: one player per
+     * Session, not one per reply, and it is still on screen after the Turn that
+     * started the job has scrolled away.
      */
     function VoiceoverStrip(props) {
       const sessionId = props?.sessionId
@@ -1468,10 +1472,12 @@ window.__ModuleLoader__.load({
         yield ctx.slots.register({ name: 'tool.call.toolview', key: 'voiceover_create' }, VoiceoverPanel)
         yield ctx.slots.register({ name: 'tool.call.toolview', key: 'voiceover_status' }, VoiceoverPanel)
       })
-      // The progress line belongs in the conversation result: a completed Turn's
-      // tail renders in the message flow, outside the folded process group.
-      ctx.slots.inject('conversation.chat.turnTail', function* () {
-        yield ctx.slots.register({ name: 'conversation.chat.turnTail', id: 'voiceover-progress', order: 0 }, VoiceoverStrip)
+      // Ambient session state, not a message attachment. The turn tail renders
+      // on every completed Turn, so registering there drew one player under
+      // every reply; the composer dock renders once per session and stays in
+      // reach while the job runs.
+      ctx.slots.inject('conversation.composer.dock', function* () {
+        yield ctx.slots.register({ name: 'conversation.composer.dock', id: 'voiceover-progress', order: 0 }, VoiceoverStrip)
       })
     }
 

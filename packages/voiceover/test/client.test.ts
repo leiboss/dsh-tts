@@ -137,8 +137,8 @@ test('registers the tool views and the composer dock strip', async () => {
   assert.deepEqual(registrations, [
     { slot: 'tool.call.toolview', id: 'voiceover_create' },
     { slot: 'tool.call.toolview', id: 'voiceover_status' },
-    // The tool view folds away with the process group; this one sits in the result.
-    { slot: 'conversation.chat.turnTail', id: 'voiceover-progress' },
+    // Ambient session state: one player under the composer, not one per Turn.
+    { slot: 'conversation.composer.dock', id: 'voiceover-progress' },
   ])
 })
 
