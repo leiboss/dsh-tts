@@ -374,3 +374,25 @@ test('serves subtitles as SRT and as WebVTT', async () => {
     await removeWithRetry(root)
   }
 })
+test('answers which project a session is running, and null when it knows none', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vo-panel-'))
+  try {
+    await seedProject(root)
+    const known = new PanelRoute({ outputDir: root, projectForSession: (sessionId) => (sessionId === 's1' ? PROJECT_ID : undefined) })
+    const server = fakeServer()
+    known.register(server.server)
+
+    const hit = fakeResponse()
+    await server.route.handler(fakeRequest(`${PANEL_ROUTE_PREFIX}/sessions/s1.json`), hit.res)
+    assert.equal(hit.status(), 200)
+    const body = JSON.parse(hit.body()) as { project: { projectId: string } | null }
+    assert.equal(body.project?.projectId, PROJECT_ID)
+
+    const miss = fakeResponse()
+    await server.route.handler(fakeRequest(`${PANEL_ROUTE_PREFIX}/sessions/other.json`), miss.res)
+    assert.equal(miss.status(), 200)
+    assert.equal((JSON.parse(miss.body()) as { project: unknown }).project, null)
+  } finally {
+    await removeWithRetry(root)
+  }
+})

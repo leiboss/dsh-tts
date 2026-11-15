@@ -34,6 +34,13 @@ export interface PanelRouteOptions {
    * call the same implementation through this hook.
    */
   onRerun?: (projectId: string, chapter?: string) => void | Promise<void>
+  /**
+   * Resolve the project a session last started.
+   *
+   * Collapsed tool calls are not rendered, so the client half cannot rely on the
+   * panel being mounted to learn what is running; the host answers instead.
+   */
+  projectForSession?: (sessionId: string) => string | undefined
   debug?: (message: string) => void
 }
 
@@ -165,6 +172,18 @@ export class PanelRoute {
       return
     }
 
+    // What is this session running? Answered from the host's own bookkeeping so
+    // the in-result strip works even when the tool call is collapsed.
+    const sessionMatch = /^sessions\/([A-Za-z0-9_-]{1,80})\.json$/.exec(name)
+    if (sessionMatch !== null) {
+      const projectId = this.options.projectForSession?.(sessionMatch[1] ?? '')
+      if (projectId === undefined) {
+        this.answer(res, 200, { project: null })
+        return
+      }
+      this.answer(res, 200, { project: (await this.snapshot(projectId)) ?? null })
+      return
+    }
     // Subtitles, so the panel can show the current line while playing and a
     // caller can pull a WebVTT track for a browser player.
     const subtitleMatch = /^([0-9a-f]{8,24})\/subtitles\/(ch-[0-9]{2,3})(\.vtt)?$/.exec(name)

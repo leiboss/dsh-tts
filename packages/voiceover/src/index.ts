@@ -222,7 +222,7 @@ export function createVoiceoverTools(
         },
       ],
     },
-    async execute(args) {
+    async execute(args, exec) {
       if (args.sourcePath === undefined && args.sourceText === undefined) {
         throw new Error('Provide either sourcePath or sourceText.')
       }
@@ -265,6 +265,11 @@ export function createVoiceoverTools(
             inFlight.delete(projectId)
           })
       }
+
+      // Remember this session's project so the in-result strip can find it even
+      // when the tool call stays collapsed and never mounts its view.
+      const sessionId = exec?.agent?.id
+      if (typeof sessionId === 'string') sessionProjects.set(sessionId, projectId)
 
       return { projectId, projectDir: join(outputDir, projectId), status: 'running' }
     },
@@ -454,6 +459,7 @@ function mountWebSurfaces(ctx: Context, config: VoiceoverConfig, env: NodeJS.Pro
     outputDir,
     ...(connection === undefined ? {} : { connection }),
     audioUrlFor: (filePath) => audio.urlFor(filePath),
+    projectForSession: (sessionId) => sessionProjects.get(sessionId),
     onRerun: (projectId, chapter) =>
       startRerun(ctx, config, outputDir, projectId, chapter === undefined ? undefined : [chapter]),
     debug,
@@ -509,6 +515,15 @@ function registerSkill(ctx: Context): void {
     }),
   )
 }
+
+/**
+ * Session -> project started there.
+ *
+ * Collapsed tool calls are not rendered, so the client cannot learn the current
+ * project from the tool view alone. The tool records it here and the panel route
+ * answers `sessions/<sessionId>.json` from this map.
+ */
+const sessionProjects = new Map<string, string>()
 
 export function apply(ctx: Context, config: VoiceoverConfig = {}): void {
   for (const tool of createVoiceoverTools(ctx, config)) {

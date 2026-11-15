@@ -176,21 +176,52 @@ test('the result strip mirrors the latest progress and hides when finished', asy
   assert.ok(spy.has('dock-session'), 'progress reached the shared store')
   remount()
   const tree = Dock({ sessionId: 'dock-session' }) as { props: { role?: string }; children: unknown[] }
-  assert.equal(tree.props.role, 'status')
+  assert.equal(tree.props.role, 'group')
   const rendered = JSON.stringify(tree)
   assert.match(rendered, /只写文档/)
   assert.match(rendered, /4\/5 章/)
 
-  // Nothing pending and nothing failed: the strip stays out of the way.
+  // A finished project still shows: the strip is also the player.
   noteProgress('dock-session', { ...snapshot, done: 5, pending: 0, failed: 0 })
   remount()
-  assert.equal(Dock({ sessionId: 'dock-session' }), null)
+  const finished = JSON.stringify(Dock({ sessionId: 'dock-session' }))
+  assert.match(finished, /只写文档/)
+  assert.match(finished, /5\/5 章/)
+  assert.doesNotMatch(finished, /章失败/)
 
   // Failures are actionable, so the strip stays and names the count.
   noteProgress('dock-session', { ...snapshot, done: 3, pending: 0, failed: 2 })
   remount()
   const failedTree = JSON.stringify(Dock({ sessionId: 'dock-session' }))
   assert.match(failedTree, /2 章失败/)
+
+  // With a playable chapter the strip is also a player: a control and an audio
+  // element whose clock drives the subtitle line.
+  noteProgress('dock-session', {
+    ...snapshot,
+    done: 5,
+    total: 5,
+    pending: 0,
+    failed: 0,
+    chapters: [
+      {
+        id: 'ch-01',
+        title: '开场',
+        status: 'done',
+        durationMs: 1000,
+        audioUrl: '/voiceover/audio/ch-01.mp3',
+        subtitles: 'audio/ch-01.srt',
+      },
+    ],
+  })
+  remount()
+  const player = Dock({ sessionId: 'dock-session' }) as Element
+  const flat = collect(player)
+  const control = flat.find((element) => element.type === 'button')
+  assert.equal(control?.props['aria-label'], '播放')
+  const audio = flat.find((element) => element.type === 'audio')
+  assert.equal(audio?.props.src, '/voiceover/audio/ch-01.mp3')
+  assert.equal(typeof audio?.props.onTimeUpdate, 'function', 'the cue follows the audio clock')
 })
 
 test('distinguishes running, done and ended-with-failures', async () => {

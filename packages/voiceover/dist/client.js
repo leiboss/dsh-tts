@@ -82,6 +82,7 @@ window.__ModuleLoader__.load({
         'queue.planning': '正在规划章节…',
         'audio.label': '{id} 音频',
         'action.play': '播放',
+        'action.pause': '暂停',
         'action.stop': '停止',
         'action.retry': '重试',
         'action.retryAria': '重跑 {id} {title}',
@@ -152,6 +153,7 @@ window.__ModuleLoader__.load({
         'queue.planning': 'Planning chapters…',
         'audio.label': '{id} audio',
         'action.play': 'Play',
+        'action.pause': 'Pause',
         'action.stop': 'Stop',
         'action.retry': 'Retry',
         'action.retryAria': 'Retry {id} {title}',
@@ -355,9 +357,8 @@ window.__ModuleLoader__.load({
       },
       // Dock strip under the composer: one line, always visible while a job runs.
       strip: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        display: 'grid',
+        gap: 4,
         padding: '6px 10px',
         borderRadius: RADIUS,
         border: '1px solid var(--dsw-alias-border-l1)',
@@ -366,6 +367,27 @@ window.__ModuleLoader__.load({
         color: 'var(--dsw-alias-label-secondary)',
         width: '100%',
         boxSizing: 'border-box',
+      },
+      stripRow: { display: 'flex', alignItems: 'center', gap: 8 },
+      stripPlay: {
+        flex: 'none',
+        width: 22,
+        height: 22,
+        padding: 0,
+        border: 'none',
+        borderRadius: 999,
+        background: 'transparent',
+        color: 'var(--dsw-alias-brand-primary)',
+        cursor: 'pointer',
+        fontSize: FONT_META,
+        lineHeight: '22px',
+      },
+      stripAudio: { display: 'none' },
+      stripCue: {
+        fontSize: FONT,
+        lineHeight: 1.5,
+        color: 'var(--dsw-alias-label-primary)',
+        overflowWrap: 'anywhere',
       },
       stripDot: { width: 6, height: 6, borderRadius: 999, background: 'var(--dsw-alias-brand-primary)', flex: 'none' },
       stripTitle: {
@@ -424,6 +446,9 @@ window.__ModuleLoader__.load({
         total: snapshot.total,
         pending: snapshot.pending,
         failed: snapshot.failed,
+        // Chapters travel with the counts so the strip can offer playback without
+        // a second request when the panel is the one that saw the snapshot first.
+        chapters: Array.isArray(snapshot.chapters) ? snapshot.chapters : [],
       }
       const current = activity.get(sessionId)
       if (
@@ -995,44 +1020,143 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One-line progress strip for the conversation result.
+     * Player and progress line for the conversation result.
      *
-     * Tool views render inside the collapsed process group, so a running job is
-     * easy to lose. This is a list slot below the composer: it cannot be folded
-     * away, carries only the essentials, and points back to the panel for the
-     * per-chapter actions.
+     * Tool views render inside the collapsed process group, and a collapsed row
+     * is not mounted at all, so this surface cannot wait for the panel to poll.
+     * It asks the host what this session is running (`sessions/<id>.json`),
+     * loads the first playable chapter, and follows the audio clock to show the
+     * current subtitle line.
      */
     function VoiceoverStrip(props) {
       const sessionId = props?.sessionId
-      const [entry, setEntry] = react.useState(() =>
+      const [project, setProject] = react.useState(() =>
         typeof sessionId === 'string' ? (activity.get(sessionId) ?? null) : null,
       )
+      const [cues, setCues] = react.useState([])
+      const [cue, setCue] = react.useState('')
+      const [paused, setPaused] = react.useState(true)
+      const audioRef = (react.useRef ?? (() => ({ current: null })))(null)
+
       react.useEffect(() => {
         if (typeof sessionId !== 'string') return undefined
-        return subscribeActivity(() => setEntry(activity.get(sessionId) ?? null))
+        let stopped = false
+        let timer
+        const tick = async () => {
+          try {
+            const res = await fetch(`/voiceover/panel/sessions/${encodeURIComponent(sessionId)}.json`, {
+              credentials: 'same-origin',
+              cache: 'no-store',
+            })
+            if (!res.ok) return
+            const data = await res.json()
+            if (stopped) return
+            // Keep the shared store's entry when the host has nothing to add.
+            if (data.project !== null && data.project !== undefined) setProject(data.project)
+            if (data.project !== null && data.project !== undefined && data.project.pending > 0) {
+              timer = setTimeout(tick, 2000)
+            }
+          } catch {
+            // Offline or a non-Web host: the strip simply stays hidden.
+          }
+        }
+        void tick()
+        return () => {
+          stopped = true
+          clearTimeout(timer)
+        }
       }, [sessionId])
 
-      if (typeof sessionId !== 'string' || entry === null || entry === undefined) return null
+      const chapters = Array.isArray(project?.chapters) ? project.chapters : []
+      const chapter =
+        chapters.find((entry) => typeof entry?.audioUrl === 'string' && entry.audioUrl.length > 0) ?? null
 
-      const total = typeof entry.total === 'number' ? entry.total : 0
-      const done = typeof entry.done === 'number' ? entry.done : 0
-      const failed = typeof entry.failed === 'number' ? entry.failed : 0
-      const pending = typeof entry.pending === 'number' ? entry.pending : 0
-      // Once nothing is pending and nothing failed, this line has nothing to say:
-      // the finished state stays in the panel.
-      if (pending === 0 && failed === 0) return null
+      react.useEffect(() => {
+        if (project === null || chapter === null) return undefined
+        let stopped = false
+        const load = async () => {
+          try {
+            const res = await fetch(`/voiceover/panel/${project.projectId}/subtitles/${chapter.id}`, {
+              credentials: 'same-origin',
+              cache: 'no-store',
+            })
+            if (res.ok && !stopped) setCues(parseSrt(await res.text()))
+          } catch {
+            // Without subtitles the transport still works; no line is shown.
+          }
+        }
+        void load()
+        return () => {
+          stopped = true
+        }
+      }, [project?.projectId, chapter?.id])
+
+      if (typeof sessionId !== 'string' || project === null) return null
+
+      const total = typeof project.total === 'number' ? project.total : 0
+      const done = typeof project.done === 'number' ? project.done : 0
+      const failed = typeof project.failed === 'number' ? project.failed : 0
       const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0
+
+      const toggle = () => {
+        const audio = audioRef.current
+        if (audio === null || audio === undefined) return
+        if (audio.paused === true) {
+          const started = audio.play?.()
+          if (started !== undefined && typeof started.catch === 'function') started.catch(() => {})
+        } else {
+          audio.pause?.()
+        }
+      }
+
       return h(
         'div',
-        { style: S.strip, role: 'status', 'aria-live': 'polite' },
-        h('span', { style: S.stripDot, 'aria-hidden': 'true' }),
-        h('span', { style: S.stripTitle }, entry.title || tr('card.title')),
-        h('span', { style: S.stripCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
-        h('div', { style: S.stripTrack, 'aria-hidden': 'true' }, h('div', { style: { ...S.stripFill, width: `${pct}%` } })),
-        failed > 0 ? h('span', { style: S.stripFailed }, tr('dock.failed', { count: failed })) : null,
-        h('span', { style: S.stripHint }, tr('dock.hint')),
+        { style: S.strip, role: 'group', 'aria-label': tr('group.label') },
+        h('style', { key: 'vo-strip' }, FOCUS_CSS),
+        h(
+          'div',
+          { style: S.stripRow },
+          chapter === null
+            ? null
+            : h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsh-vo-btn',
+                  style: S.stripPlay,
+                  'aria-label': paused ? tr('action.play') : tr('action.pause'),
+                  onClick: toggle,
+                },
+                paused ? '▶' : '❚❚',
+              ),
+          h('span', { style: S.stripTitle }, project.title || tr('card.title')),
+          h('span', { style: S.stripCount }, total > 0 ? tr('count.progress', { done, total }) : tr('count.preparing')),
+          h(
+            'div',
+            { style: S.stripTrack, 'aria-hidden': 'true' },
+            h('div', { style: { ...S.stripFill, width: `${pct}%` } }),
+          ),
+          failed > 0 ? h('span', { style: S.stripFailed }, tr('dock.failed', { count: failed })) : null,
+        ),
+        cue.length === 0 ? null : h('div', { style: S.stripCue, 'aria-live': 'polite' }, cue),
+        chapter === null
+          ? null
+          : h('audio', {
+              ref: audioRef,
+              src: chapter.audioUrl,
+              preload: 'none',
+              style: S.stripAudio,
+              onTimeUpdate: (event) => setCue(cueAt(cues, event.currentTarget.currentTime * 1000)),
+              onPlay: () => setPaused(false),
+              onPause: () => setPaused(true),
+              onEnded: () => {
+                setPaused(true)
+                setCue('')
+              },
+            }),
       )
     }
+
 
     // ----------------------------------------------------------------- mount
 

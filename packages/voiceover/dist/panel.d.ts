@@ -15,6 +15,13 @@ export interface PanelRouteOptions {
      * call the same implementation through this hook.
      */
     onRerun?: (projectId: string, chapter?: string) => void | Promise<void>;
+    /**
+     * Resolve the project a session last started.
+     *
+     * Collapsed tool calls are not rendered, so the client half cannot rely on the
+     * panel being mounted to learn what is running; the host answers instead.
+     */
+    projectForSession?: (sessionId: string) => string | undefined;
     debug?: (message: string) => void;
 }
 /**
