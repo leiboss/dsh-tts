@@ -15,7 +15,7 @@ import { splitText } from "./chunker.js";
 import { synthesizeChunked } from "./chunked-tts.js";
 import { ConcurrencyLimiter } from "./concurrency.js";
 import { synthesize } from "./edge-tts.js";
-import { isEdgeJsAvailable, synthesizeWithEdgeJs } from "./engines/edge-js.js";
+import { edgeJsLoadError, isEdgeJsAvailable, synthesizeWithEdgeJs } from "./engines/edge-js.js";
 import { ErrorCode, looksLikeThrottle, TtsError } from "./errors.js";
 import { isFallbackEligible, runFallback } from "./fallback.js";
 import { probeEndpoint } from "./probe.js";
@@ -154,12 +154,20 @@ export class TtsService {
     }
     /** Resolve the backend once per instance; `auto` prefers the pure-JS engine. */
     async resolveEngine() {
-        if (this.engineKind !== undefined)
-            return this.engineKind;
         const configured = this.config.engine;
-        this.engineKind =
-            configured === 'auto' ? ((await isEdgeJsAvailable()) ? 'edge-js' : 'edge-py') : configured;
-        return this.engineKind;
+        if (configured !== 'auto') {
+            this.engineKind = configured;
+            return configured;
+        }
+        if (this.engineKind === 'edge-js')
+            return 'edge-js';
+        // A negative result is not cached: `node-edge-tts` may be installed after the
+        // process started, and caching "unavailable" would keep the CLI path forever.
+        if (await isEdgeJsAvailable()) {
+            this.engineKind = 'edge-js';
+            return 'edge-js';
+        }
+        return 'edge-py';
     }
     /** Produce audio without consulting the cache. */
     async produce(input) {
@@ -186,7 +194,21 @@ export class TtsService {
                 await this.sleep(delay, input.signal);
             }
         }
-        return this.fallbackChain(input, lastError);
+        return this.fallbackChain(input, this.explainMissingCli(lastError));
+    }
+    /**
+     * When the CLI backend is missing, say why the pure-JS one was passed over.
+     *
+     * Otherwise the user reads "install edge-tts" while the real problem is that
+     * `node-edge-tts` could not be imported, which is a different fix.
+     */
+    explainMissingCli(error) {
+        if (!(error instanceof TtsError) || error.code !== ErrorCode.EdgeTtsNotFound)
+            return error;
+        const reason = edgeJsLoadError();
+        if (reason === undefined)
+            return error;
+        return new TtsError(error.code, `${error.message} (the pure-JS backend could not load: ${reason})`, 'Install edge-tts, or make node-edge-tts importable so the pure-JS backend can run.', { cause: error });
     }
     /** Local engine: no network, no Edge CLI, straight to the SAPI chain. */
     async produceWithSapi(input) {

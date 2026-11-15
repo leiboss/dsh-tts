@@ -150,3 +150,39 @@ test('pitch and volume participate in the cache key', async () => {
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('a missing pure-JS backend is not cached forever', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-tts-service-'))
+  let installed = false
+  setEdgeJsLoader(async () => {
+    if (!installed) throw new Error('node-edge-tts is not installed')
+    return {
+      EdgeTTS: class {
+        constructor(config2: Record<string, unknown>) {
+          void config2
+        }
+
+        async *streamAudio(): AsyncGenerator<Buffer> {
+          yield Buffer.concat(Array.from({ length: 10 }, () => frame()))
+        }
+
+        async ttsPromise(): Promise<void> {}
+      },
+    }
+  })
+  try {
+    const service = new TtsService(config(dir, { engine: 'auto', fallbackEnabled: false, fallbackOrder: [] }))
+    // First attempt cannot use the pure-JS backend and there is no CLI here.
+    await assert.rejects(() => service.synthesize({ text: 'first' }))
+
+    // Installing it later must be noticed: the negative result is not cached.
+    installed = true
+    const second = await service.synthesize({ text: 'second' })
+    assert.equal(second.kind, 'audio')
+    if (second.kind !== 'audio') return
+    assert.equal(second.engine, 'edge-js')
+  } finally {
+    setEdgeJsLoader(undefined)
+    await rm(dir, { recursive: true, force: true })
+  }
+})

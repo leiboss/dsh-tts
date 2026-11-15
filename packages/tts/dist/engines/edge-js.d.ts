@@ -39,6 +39,8 @@ interface EdgeJsModule {
 export declare function setEdgeJsLoader(impl: (() => Promise<unknown>) | undefined): void;
 /** Load the optional dependency, or report that it is not installed. */
 export declare function loadEdgeJsModule(): Promise<EdgeJsModule | undefined>;
+/** The import failure behind the last negative availability check. */
+export declare function edgeJsLoadError(): string | undefined;
 /** Whether the pure-JS backend can be used in this process. */
 export declare function isEdgeJsAvailable(): Promise<boolean>;
 /**

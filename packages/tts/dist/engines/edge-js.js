@@ -11,6 +11,8 @@
  */
 import { ErrorCode, looksLikeThrottle, TtsError } from "../errors.js";
 let loader;
+/** Why the last import failed, so a fallback can explain itself. */
+let lastLoadError;
 /** Replace the module loader. Tests inject a fake; production clears it. */
 export function setEdgeJsLoader(impl) {
     loader = impl;
@@ -22,9 +24,14 @@ export async function loadEdgeJsModule() {
         const loaded = (await load());
         return typeof loaded.EdgeTTS === 'function' ? loaded : undefined;
     }
-    catch {
+    catch (error) {
+        lastLoadError = error instanceof Error ? error.message : String(error);
         return undefined;
     }
+}
+/** The import failure behind the last negative availability check. */
+export function edgeJsLoadError() {
+    return lastLoadError;
 }
 /** Whether the pure-JS backend can be used in this process. */
 export async function isEdgeJsAvailable() {

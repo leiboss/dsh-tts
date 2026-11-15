@@ -96,6 +96,13 @@ export declare class TtsService {
     private resolveEngine;
     /** Produce audio without consulting the cache. */
     private produce;
+    /**
+     * When the CLI backend is missing, say why the pure-JS one was passed over.
+     *
+     * Otherwise the user reads "install edge-tts" while the real problem is that
+     * `node-edge-tts` could not be imported, which is a different fix.
+     */
+    private explainMissingCli;
     /** Local engine: no network, no Edge CLI, straight to the SAPI chain. */
     private produceWithSapi;
     /** Wait between throttle retries; injected in tests so they never sleep. */

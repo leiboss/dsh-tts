@@ -51,6 +51,9 @@ interface EdgeJsModule {
 
 let loader: (() => Promise<unknown>) | undefined
 
+/** Why the last import failed, so a fallback can explain itself. */
+let lastLoadError: string | undefined
+
 /** Replace the module loader. Tests inject a fake; production clears it. */
 export function setEdgeJsLoader(impl: (() => Promise<unknown>) | undefined): void {
   loader = impl
@@ -62,9 +65,15 @@ export async function loadEdgeJsModule(): Promise<EdgeJsModule | undefined> {
   try {
     const loaded = (await load()) as Partial<EdgeJsModule>
     return typeof loaded.EdgeTTS === 'function' ? (loaded as EdgeJsModule) : undefined
-  } catch {
+  } catch (error) {
+    lastLoadError = error instanceof Error ? error.message : String(error)
     return undefined
   }
+}
+
+/** The import failure behind the last negative availability check. */
+export function edgeJsLoadError(): string | undefined {
+  return lastLoadError
 }
 
 /** Whether the pure-JS backend can be used in this process. */
