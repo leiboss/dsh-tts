@@ -500,10 +500,23 @@ function mountWebSurfaces(ctx: Context, config: VoiceoverConfig, env: NodeJS.Pro
  * files with no subtitles and no resume. Optional on purpose: a host without the
  * skills service still gets the tools.
  */
+interface SkillRegistration {
+  name: string
+  description: string
+  whenToUse?: string
+  content: string
+  /**
+   * Origin of the entry. The host rejects a registration without it at load
+   * time ("source must be a string"), so this is typed rather than cast away.
+   */
+  source: string
+  invocation?: { modelInvocable: boolean; userInvocable: boolean }
+}
+
 function registerSkill(ctx: Context): void {
   const skills = typeof ctx.get === 'function' ? ctx.get('skills') : undefined
   if (skills === undefined || skills === null) return
-  const register = (skills as { register?: (skill: unknown) => () => void }).register
+  const register = (skills as { register?: (skill: SkillRegistration) => () => void }).register
   if (typeof register !== 'function') return
   ctx.effect(() =>
     register.call(skills, {
@@ -511,6 +524,7 @@ function registerSkill(ctx: Context): void {
       description: VOICEOVER_SKILL.description,
       whenToUse: VOICEOVER_SKILL.whenToUse,
       content: VOICEOVER_SKILL.content,
+      source: 'runtime',
       invocation: { modelInvocable: true, userInvocable: true },
     }),
   )

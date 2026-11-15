@@ -407,15 +407,6 @@ function mountWebSurfaces(ctx, config, env = process.env) {
         register(late);
     });
 }
-/** Mount the tools. Registration is fiber-owned, so unloading cleans up. */
-/**
- * Offer the agent a skill, not just tools.
- *
- * Tools say what exists; a skill says when to reach for it. Without this the
- * model tends to call `tts_generate` once per paragraph, which produces loose
- * files with no subtitles and no resume. Optional on purpose: a host without the
- * skills service still gets the tools.
- */
 function registerSkill(ctx) {
     const skills = typeof ctx.get === 'function' ? ctx.get('skills') : undefined;
     if (skills === undefined || skills === null)
@@ -428,6 +419,7 @@ function registerSkill(ctx) {
         description: VOICEOVER_SKILL.description,
         whenToUse: VOICEOVER_SKILL.whenToUse,
         content: VOICEOVER_SKILL.content,
+        source: 'runtime',
         invocation: { modelInvocable: true, userInvocable: true },
     }));
 }

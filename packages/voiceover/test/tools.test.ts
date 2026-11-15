@@ -255,6 +255,8 @@ test('offers a skill so the agent does not stitch tts_generate calls', () => {
   apply(withSkills, {})
   assert.equal(registered.length, 1)
   assert.equal(registered[0]?.name, 'voiceover')
+  // The host refuses a skill whose source is not a string, at load time.
+  assert.equal(registered[0]?.source, 'runtime')
   assert.match(String(registered[0]?.description), /chaptered audio/)
   assert.match(String(registered[0]?.content), /tts_generate/)
   assert.match(String(registered[0]?.content), /voiceover_create/)
