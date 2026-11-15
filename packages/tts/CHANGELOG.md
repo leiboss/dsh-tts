@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+- An icon (`icon.svg`, 36x36, shared navy tile with a speaker) declared through the
+  `./icon` export, so Plugin Manager can draw the plugin row.
+- `dsh.client.inject` named three modules the page cannot resolve, so the
+  `tts_generate` player never loaded. It now injects
+  `@deepseek-ai/dsh-client-ui-conversation`, and a manifest test pins the inject
+  list, the client entry and the icon.
 ## 0.3.1
 
 - Republished at 0.3.1 because 0.3.0's tarball sat in npm's post-publish processing
