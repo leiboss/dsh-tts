@@ -5,6 +5,7 @@
  */
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { readEpisodeMetadata } from "./episode.js";
 import { readJson } from "./util.js";
 /** Project ids are the first hex characters of a content hash. */
 export const PROJECT_ID = /^[0-9a-f]{8,24}$/;
@@ -31,6 +32,23 @@ export async function projectSnapshot(outputDir, projectId, options = {}) {
     const chapters = [...state.chapters].sort((a, b) => a.order - b.order);
     const done = chapters.filter((chapter) => chapter.status === 'done').length;
     const failed = chapters.filter((chapter) => chapter.status === 'failed').length;
+    // The merged episode is a separate artifact; a missing or unreadable one is
+    // simply absent, never an error that hides the chapter panel.
+    const merged = await readEpisodeMetadata(join(outputDir, projectId));
+    const episode = merged === undefined
+        ? undefined
+        : {
+            path: merged.metadata.audio,
+            durationMs: merged.metadata.durationMs,
+            chapters: merged.metadata.chapters.length,
+            createdAt: merged.metadata.createdAt,
+            ...(options.audioUrlFor === undefined
+                ? {}
+                : (() => {
+                    const url = options.audioUrlFor?.(merged.audioPath);
+                    return url === undefined ? {} : { url };
+                })()),
+        };
     return {
         projectId,
         title: state.outline.title,
@@ -73,6 +91,7 @@ export async function projectSnapshot(outputDir, projectId, options = {}) {
             }
             return row;
         }),
+        ...(episode === undefined ? {} : { episode }),
         warnings: state.warnings.slice(0, 5),
         warningCount: state.warnings.length,
         stateUpdatedAt,

@@ -34,6 +34,7 @@ dsh plugin --profile <profile> add @leiboss/dsh-voiceover
 1. `voiceover_create` — 立即返回 `projectId`，后台开始跑
 2. `voiceover_status` — 轮询逐章进度
 3. `voiceover_export` — 拿到音频、字幕、manifest 的绝对路径
+4. `voiceover_episode` — 把所有章节合成一个带章节标记的成品文件（播客/有声书用）
 
 ## 产物
 
@@ -45,7 +46,22 @@ dsh plugin --profile <profile> add @leiboss/dsh-voiceover
   audio/ch-01.est.srt      # estimated 时带 .est
   state/state.json          # 断点续跑依据
   manifest.json             # 契约，schema 见 schemas/
+  episode/<标题>.mp3        # 成片：单文件 + ID3v2.4 章节
+  episode/<标题>.srt        # 合并字幕（按成片时间轴）
+  episode/<标题>.json       # 章节时间轴、大小、输入指纹
 ```
+
+## 成片
+
+跑完（或大部分章节完成）后，可以让 agent 合成**一个可直接上传/收听的成品**：
+
+- `voiceover_episode({ projectId })` 产出 `episode/<标题>.mp3`：ID3v2.4 的 `CHAP`/`CTOC`
+  章节标记，配合 `coverPath` 写入封面，标题与作者写进 `TIT2`/`TPE1`。
+- 合并是**帧级拼接，不重编码**；章节参数不一致（例如 Edge 章节混进 SAPI 回退）会直接报
+  `EPISODE_FORMAT_UNSUPPORTED`，而不是写出一个变速文件。
+- 章节之间默认插 300ms 带内静音，`gapMs` 可调，`gapMs: 0` 关闭。
+- 输入没变时再跑是 no-op：`episode/*.json` 里的指纹决定是否重写。
+- 面板会在章节列表上方多出一行成片播放器；无 Web 宿主时用路径自行播放。
 
 ## 降级矩阵
 
@@ -114,6 +130,7 @@ dsh plugin --profile <profile> add @leiboss/dsh-voiceover
 | `voiceover_create` | 建项目，立即返回 `projectId` |
 | `voiceover_status` | 查看逐章进度 |
 | `voiceover_export` | 返回音频、字幕、manifest 的绝对路径 |
+| `voiceover_episode` | 合成单个成品文件（章节标记、封面、合并字幕） |
 | `voiceover_rerun` | 续跑：跳过已完成章节；传 `chapter` 时只重跑该章 |
 ## 本地 daemon
 

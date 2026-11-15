@@ -134,7 +134,9 @@ test('records every planned chapter and the running stage before the chapter end
         completer: fakeCompleter(),
         synth: {
           async synthesize(request: { text: string; voice: string; rate: string }) {
-            duringSynth = await readProgress()
+            // Only the first chapter: the second one's own synthesis sees a state
+            // where its chapter has already moved past `queued`.
+            if (duringSynth === undefined) duringSynth = await readProgress()
             return synth.synthesize(request)
           },
         },

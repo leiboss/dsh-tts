@@ -160,4 +160,42 @@ export function formatSrt(units) {
         .join('\n\n')
         .concat('\n');
 }
+/** `HH:MM:SS,mmm` (or `.`) to milliseconds; NaN when unreadable. */
+function parseTimestamp(value) {
+    const match = /^(\d{2}):(\d{2}):(\d{2})[.,](\d{3})$/.exec(value);
+    if (match === null)
+        return Number.NaN;
+    return (Number(match[1]) * 3_600_000 + Number(match[2]) * 60_000 + Number(match[3]) * 1000 + Number(match[4]));
+}
+/**
+ * Parse an SRT document into timed units.
+ *
+ * Used when subtitles are merged into one episode file: the per-chapter cues are
+ * already written, so this reads them back rather than rebuilding them.
+ */
+export function parseSrt(text) {
+    const normalized = text.replace(/\r\n/g, '\n').trim();
+    if (normalized.length === 0)
+        return [];
+    const units = [];
+    for (const block of normalized.split('\n\n')) {
+        const lines = block.split('\n');
+        const at = lines.findIndex((line) => line.includes('-->'));
+        if (at < 0)
+            continue;
+        const [startRaw, endRaw] = (lines[at] ?? '').split('-->').map((part) => part.trim());
+        const startMs = parseTimestamp(startRaw ?? '');
+        const endMs = parseTimestamp(endRaw ?? '');
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs)
+            continue;
+        const body = lines
+            .slice(at + 1)
+            .join('\n')
+            .trim();
+        if (body.length === 0)
+            continue;
+        units.push({ text: body, startMs, endMs });
+    }
+    return units;
+}
 //# sourceMappingURL=subtitle.js.map

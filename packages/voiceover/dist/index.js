@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { httpCompleter } from "./llm.js";
+import { buildEpisode } from "./episode.js";
 import { PanelRoute } from "./panel.js";
 import { rerunProject } from "./operations.js";
 import { normalizeSource, projectKey, runProject } from "./pipeline.js";
@@ -313,6 +314,98 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
             };
         },
     });
+    const episodeTool = defineTool({
+        name: 'voiceover_episode',
+        description: [
+            'Assemble a finished project into one publishable file: chapters merged into a single MP3 with chapter markers,',
+            'an optional cover, a merged SRT, and an episode manifest. Use it when the user wants something to upload or',
+            'listen to as a whole (podcast episode, audiobook); use voiceover_export when only the per-chapter files matter.',
+            'Chapters recorded with different encoder settings are refused instead of merged into a file that plays wrong.',
+        ].join(' '),
+        parameters: {
+            projectId: { type: 'string', required: true, description: 'Id returned by voiceover_create.' },
+            title: { type: 'string', description: 'Episode title; defaults to the project title.' },
+            author: { type: 'string', description: 'Author or narrator shown in the tag.' },
+            coverPath: { type: 'string', description: 'Absolute path to a .jpg or .png cover, at most 1 MiB.' },
+            gapMs: { type: 'number', description: 'Silence between chapters in milliseconds. Defaults to 300; 0 disables it.' },
+        },
+        output: {
+            schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                    episodePath: { type: 'string', description: 'Absolute path to the merged MP3.' },
+                    subtitlesPath: { type: 'string', description: 'Merged SRT path; empty when the project has no subtitles.' },
+                    metadataPath: { type: 'string', description: 'Episode metadata (chapter timeline, size, fingerprint).' },
+                    durationMs: { type: 'number', description: 'Total duration including the gaps.' },
+                    chapters: { type: 'number', description: 'Chapters merged into the file.' },
+                    bytes: { type: 'number', description: 'Size of the merged file.' },
+                    warnings: { type: 'array', items: { type: 'string' }, description: 'Degradations worth telling the user.' },
+                },
+            },
+            render: (_args, value) => {
+                const seconds = Math.round((value.durationMs ?? 0) / 1000);
+                const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+                const size = `${((value.bytes ?? 0) / (1024 * 1024)).toFixed(1)} MB`;
+                return [
+                    {
+                        type: 'text',
+                        text: [
+                            `Episode: ${value.episodePath ?? ''}`,
+                            `${value.chapters ?? 0} chapters · ${clock} · ${size}`,
+                            ...(value.subtitlesPath === undefined || value.subtitlesPath.length === 0
+                                ? []
+                                : [`Subtitles: ${value.subtitlesPath}`]),
+                            `Metadata: ${value.metadataPath ?? ''}`,
+                            ...((value.warnings ?? []).length === 0
+                                ? []
+                                : ['Warnings:', ...(value.warnings ?? []).map((warning) => `- ${warning}`)]),
+                        ].join('\n'),
+                    },
+                ];
+            },
+        },
+        async execute(args) {
+            const projectId = args.projectId;
+            const projectDir = join(outputDir, projectId);
+            const state = await readJson(join(projectDir, 'state', 'state.json'));
+            if (state === undefined)
+                throw new Error(`Unknown project: ${projectId}`);
+            const chapters = [];
+            for (const chapter of state.chapters) {
+                if (chapter.status !== 'done' || chapter.audio === undefined)
+                    continue;
+                chapters.push({
+                    id: chapter.id,
+                    order: chapter.order,
+                    title: chapter.title,
+                    audioPath: join(projectDir, chapter.audio.path),
+                    durationMs: chapter.audio.durationMs,
+                    ...(chapter.subtitles === undefined
+                        ? {}
+                        : { subtitlesPath: join(projectDir, chapter.subtitles.path) }),
+                });
+            }
+            const result = await buildEpisode({
+                projectId,
+                projectDir,
+                title: args.title ?? state.outline.title,
+                ...(args.author === undefined ? {} : { author: args.author }),
+                ...(args.coverPath === undefined ? {} : { coverPath: args.coverPath }),
+                ...(args.gapMs === undefined ? {} : { gapMs: args.gapMs }),
+                chapters,
+            });
+            return {
+                episodePath: result.audioPath,
+                subtitlesPath: result.subtitlesPath,
+                metadataPath: result.metadataPath,
+                durationMs: result.durationMs,
+                chapters: result.chapters,
+                bytes: result.bytes,
+                warnings: result.warnings,
+            };
+        },
+    });
     const rerun = defineTool({
         name: 'voiceover_rerun',
         description: 'Resume a voiceover project: finished chapters are skipped, failed or missing ones run again. Returns immediately; poll voiceover_status.',
@@ -348,7 +441,7 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
             return { projectId, status: 'running' };
         },
     });
-    return [create, status, exportTool, rerun];
+    return [create, status, exportTool, episodeTool, rerun];
 }
 /** Route prefix for per-chapter audio; distinct from the engine's own prefix. */
 export const VOICEOVER_AUDIO_PREFIX = '/voiceover/audio';

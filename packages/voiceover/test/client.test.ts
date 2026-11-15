@@ -345,6 +345,47 @@ test('the strip keeps the status out of the subtitle line while playing', async 
   assert.equal(stripLine({}), '')
 })
 
+test('the panel offers the merged episode when one exists', async () => {
+  const { react, reset } = recordingReact()
+  const client = await loadClient(react)
+  const seed = client.__seedSnapshot as (id: string, snapshot: unknown) => void
+  const panel = client.VoiceoverPanel as (props: unknown) => unknown
+  const projectId = 'fedcba987654'
+
+  seed(projectId, {
+    projectId,
+    title: '整本',
+    done: 2,
+    total: 2,
+    pending: 0,
+    failed: 0,
+    capability: { llm: false, network: true, wordBoundaries: false, timingQuality: 'exact' },
+    engine: { name: 'edge-js', voice: 'zh-CN-XiaoxiaoNeural', rate: '+0%' },
+    chapters: [
+      { id: 'ch-01', order: 1, title: '开场', status: 'done', durationMs: 1000, audioUrl: '/voiceover/audio/a' },
+    ],
+    episode: {
+      path: '整本.mp3',
+      durationMs: 960_000,
+      chapters: 2,
+      createdAt: new Date().toISOString(),
+      url: '/voiceover/audio/episode',
+    },
+    warnings: [],
+    warningCount: 0,
+    stateUpdatedAt: new Date().toISOString(),
+    servedAt: new Date().toISOString(),
+  })
+  reset()
+
+  const tree = panel({ phase: 'result', block: { content: [{ text: `projectId: ${projectId}` }] } })
+  const nodes = collect(tree)
+  const player = nodes.find((node) => node.type === 'audio' && node.props.src === '/voiceover/audio/episode')
+  assert.ok(player, 'the merged episode gets its own player')
+  assert.equal(player.props['aria-label'], '成片试听')
+  assert.match(JSON.stringify(tree), /成片 · 16:00 · 2 章/)
+})
+
 test('distinguishes running, done and ended-with-failures', async () => {
   const client = await loadClient()
   const stateWord = client.stateWord as (snapshot: Record<string, unknown>) => string

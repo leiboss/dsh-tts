@@ -110,13 +110,72 @@ async function seed(outputDir: string): Promise<void> {
   )
 }
 
-test('apply registers all four tools', () => {
+test('apply registers all five tools', () => {
   const { ctx, registered } = fakeContext()
   apply(ctx, {})
   assert.deepEqual(
     registered.map((tool) => tool.name),
-    ['voiceover_create', 'voiceover_status', 'voiceover_export', 'voiceover_rerun'],
+    ['voiceover_create', 'voiceover_status', 'voiceover_export', 'voiceover_episode', 'voiceover_rerun'],
   )
+})
+
+test('voiceover_episode merges a finished project into one tagged file', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vo-tools-episode-'))
+  try {
+    const dir = join(root, 'voiceover', PROJECT_ID)
+    await mkdir(join(dir, 'state'), { recursive: true })
+    await mkdir(join(dir, 'audio'), { recursive: true })
+    // MPEG-2 Layer III, 48 kbps, 24 kHz, mono: two 144-byte / 24 ms frames.
+    const frame = Buffer.alloc(144)
+    Buffer.from([0xff, 0xf3, 0x64, 0xc0]).copy(frame)
+    await writeFile(join(dir, 'audio', 'ch-01.mp3'), Buffer.concat([frame, frame]))
+    await writeFile(join(dir, 'audio', 'ch-01.srt'), '1\n00:00:00,000 --> 00:00:00,100\n第一句\n')
+    await writeFile(
+      join(dir, 'state', 'state.json'),
+      JSON.stringify({
+        projectId: PROJECT_ID,
+        sourceHash: 'a'.repeat(64),
+        promptVersion: 'p1.3',
+        engine: { name: 'edge-js', voice: 'zh-CN-XiaoxiaoNeural', rate: '+0%' },
+        capability: { llm: false, network: true, wordBoundaries: false, timingQuality: 'exact' },
+        style: 'news',
+        outline: {
+          title: '工具测试',
+          chapters: [{ id: 'ch-01', title: '开头', summary: '', sourceRange: [0, 1], estimatedChars: 10 }],
+        },
+        chapters: [
+          {
+            id: 'ch-01',
+            order: 1,
+            title: '开头',
+            chars: 10,
+            sourceRange: [0, 1],
+            status: 'done',
+            audio: { path: 'audio/ch-01.mp3', bytes: 288, durationMs: 48, timingQuality: 'exact', format: 'mp3' },
+            subtitles: { path: 'audio/ch-01.srt', units: 1, timingQuality: 'exact' },
+          },
+        ],
+        inputHashes: {},
+        warnings: [],
+        createdAt: '2026-11-14T00:00:00.000Z',
+      }),
+    )
+
+    const tool = (await tools({ DSH_HOME: root })).voiceover_episode ?? {}
+    const execute = tool.execute as (args: Record<string, unknown>) => Promise<Record<string, unknown>>
+    const value = await execute({ projectId: PROJECT_ID, author: 'leiboss', gapMs: 0 })
+
+    assert.match(String(value.episodePath), /episode[\\/]工具测试\.mp3$/)
+    assert.equal(value.chapters, 1)
+    assert.equal(value.durationMs, 48)
+    assert.match(String(value.subtitlesPath), /工具测试\.srt$/)
+    assert.ok((await stat(String(value.episodePath))).size > 48, 'the merged file carries a tag')
+    const text = renderOf(tool)({}, value)[0].text
+    assert.match(text, /1 chapters · 0:00/)
+    assert.match(text, /工具测试\.mp3/)
+  } finally {
+    await removeWithRetry(root)
+  }
 })
 
 test('voiceover_create validates its source before starting anything', async () => {
@@ -267,5 +326,5 @@ test('offers a skill so the agent does not stitch tts_generate calls', () => {
 test('apply still works on a host without a skills service', () => {
   const { ctx, registered } = fakeContext()
   apply(ctx, {})
-  assert.equal(registered.length, 4, 'the four tools are registered regardless')
+  assert.equal(registered.length, 5, 'the five tools are registered regardless')
 })

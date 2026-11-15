@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0
+
+- **One finished file per project.** `voiceover_episode` merges the chapters into
+  a single MP3 that carries ID3v2.4 chapter markers (`CHAP`/`CTOC`), so a podcast
+  client or phone shows the book's outline instead of one long unknown track. A
+  cover (`coverPath`), title and author go into the same tag, the chapter
+  subtitles are merged into one `.srt` on the episode timeline, and
+  `episode/<name>.json` records the chapter start times, sizes and an input
+  fingerprint.
+- The merge is a frame-level concatenation, not a re-encode: chapters produced
+  with different encoder settings are refused (`EPISODE_FORMAT_UNSUPPORTED`)
+  instead of being written into a file that plays at the wrong speed. 300 ms of
+  in-band silence separates chapters by default (`gapMs` changes or disables it).
+- Re-running with unchanged inputs is a no-op: the metadata fingerprint decides,
+  so the episode is only rewritten when a chapter, the title, the cover or the
+  gap actually changed.
+- The panel gains an episode row with its own player and file name, fed by the
+  new `episode` field of the panel snapshot.
+
 ## 0.3.8
 
 - **The strip plays the whole book.** It mounted one chapter and stopped when

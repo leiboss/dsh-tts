@@ -42,6 +42,14 @@ configured), synthesizes, aligns subtitles, and keeps a resumable state file.
    \`voiceover_rerun({ projectId, chapter: 'ch-03' })\` retries one.
 4. When the user wants the files, call \`voiceover_export({ projectId })\` and
    report the absolute paths.
+5. When the user wants **one finished recording** — a podcast episode, an
+   audiobook, "整段音频", something to upload or send — call
+   \`voiceover_episode({ projectId })\`. It merges every finished chapter into one
+   MP3 with chapter markers, writes a merged SRT next to it, and reports the
+   duration. Pass \`coverPath\` for artwork and \`gapMs\` to change the silence
+   between chapters (default 300 ms). Do not re-encode by hand: mixed encoder
+   settings are refused with \`EPISODE_FORMAT_UNSUPPORTED\`, and that error is the
+   actionable part.
 
 ## Reading the result honestly
 

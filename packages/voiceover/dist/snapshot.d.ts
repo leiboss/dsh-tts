@@ -15,6 +15,16 @@ export interface SnapshotChapter {
     /** Playback URL, only when the caller supplied a minting function. */
     audioUrl?: string;
 }
+/** The merged episode, when one has been assembled. */
+export interface SnapshotEpisode {
+    /** File name inside the project's `episode/` directory. */
+    path: string;
+    durationMs: number;
+    chapters: number;
+    createdAt: string;
+    /** Playback URL, only when the caller supplied a minting function. */
+    url?: string;
+}
 /** What both surfaces render/serve. */
 export interface ProjectSnapshot {
     projectId: string;
@@ -27,6 +37,8 @@ export interface ProjectSnapshot {
     capability: Capability;
     engine: EngineInfo;
     chapters: SnapshotChapter[];
+    /** The merged episode file, once `voiceover_episode` has run. */
+    episode?: SnapshotEpisode;
     warnings: string[];
     /** Total warnings recorded; `warnings` is capped. */
     warningCount: number;

@@ -46,4 +46,11 @@ export declare function alignUnits(units: readonly SubtitleUnit[], durationMs: n
 };
 /** Render an SRT document (1-based indices, blank line after each cue). */
 export declare function formatSrt(units: readonly TimedUnit[]): string;
+/**
+ * Parse an SRT document into timed units.
+ *
+ * Used when subtitles are merged into one episode file: the per-chapter cues are
+ * already written, so this reads them back rather than rebuilding them.
+ */
+export declare function parseSrt(text: string): TimedUnit[];
 //# sourceMappingURL=subtitle.d.ts.map

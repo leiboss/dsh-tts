@@ -84,6 +84,8 @@ window.__ModuleLoader__.load({
         'queue.waiting': '正在为 {total} 章排队…',
         'queue.planning': '正在规划章节…',
         'audio.label': '{id} 音频',
+        'episode.label': '成片 · {time} · {chapters} 章',
+        'episode.aria': '成片试听',
         'action.play': '播放',
         'action.pause': '暂停',
         'strip.total': '共 {time}',
@@ -161,6 +163,8 @@ window.__ModuleLoader__.load({
         'queue.waiting': 'Queuing {total} chapters…',
         'queue.planning': 'Planning chapters…',
         'audio.label': '{id} audio',
+        'episode.label': 'Episode · {time} · {chapters} chapters',
+        'episode.aria': 'Episode preview',
         'action.play': 'Play',
         'action.pause': 'Pause',
         'strip.total': '{time} total',
@@ -401,6 +405,10 @@ window.__ModuleLoader__.load({
         lineHeight: '22px',
       },
       stripAudio: { display: 'none' },
+      // The merged episode gets its own row: one file the user can play or send.
+      episode: { display: 'grid', gap: 4, paddingTop: 2 },
+      episodeHead: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: FONT_META },
+      episodeTitle: { color: 'var(--dsw-alias-label-primary)' },
       stripRate: {
         flex: 'none',
         minWidth: 36,
@@ -1137,6 +1145,32 @@ window.__ModuleLoader__.load({
           chip(voice),
           chip(subtitles),
         ),
+        snap.episode === undefined
+          ? null
+          : h(
+              'div',
+              { style: S.episode },
+              h(
+                'div',
+                { style: S.episodeHead },
+                h(
+                  'span',
+                  { style: S.episodeTitle },
+                  tr('episode.label', {
+                    time: formatDuration(snap.episode.durationMs),
+                    chapters: snap.episode.chapters,
+                  }),
+                ),
+                h('span', { style: S.meta }, snap.episode.path),
+              ),
+              h('audio', {
+                controls: true,
+                preload: 'none',
+                src: snap.episode.url,
+                style: S.player,
+                'aria-label': tr('episode.aria'),
+              }),
+            ),
         chapters.length === 0
           ? h(
               'div',

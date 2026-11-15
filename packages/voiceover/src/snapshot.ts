@@ -5,6 +5,7 @@
  */
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { readEpisodeMetadata } from './episode.ts'
 import type { ProjectState } from './pipeline.ts'
 import type { Capability, ChapterStatus, EngineInfo } from './types.ts'
 import { readJson } from './util.ts'
@@ -27,6 +28,17 @@ export interface SnapshotChapter {
   audioUrl?: string
 }
 
+/** The merged episode, when one has been assembled. */
+export interface SnapshotEpisode {
+  /** File name inside the project's `episode/` directory. */
+  path: string
+  durationMs: number
+  chapters: number
+  createdAt: string
+  /** Playback URL, only when the caller supplied a minting function. */
+  url?: string
+}
+
 /** What both surfaces render/serve. */
 export interface ProjectSnapshot {
   projectId: string
@@ -39,6 +51,8 @@ export interface ProjectSnapshot {
   capability: Capability
   engine: EngineInfo
   chapters: SnapshotChapter[]
+  /** The merged episode file, once `voiceover_episode` has run. */
+  episode?: SnapshotEpisode
   warnings: string[]
   /** Total warnings recorded; `warnings` is capped. */
   warningCount: number
@@ -80,6 +94,25 @@ export async function projectSnapshot(
   const chapters = [...state.chapters].sort((a, b) => a.order - b.order)
   const done = chapters.filter((chapter) => chapter.status === 'done').length
   const failed = chapters.filter((chapter) => chapter.status === 'failed').length
+
+  // The merged episode is a separate artifact; a missing or unreadable one is
+  // simply absent, never an error that hides the chapter panel.
+  const merged = await readEpisodeMetadata(join(outputDir, projectId))
+  const episode: SnapshotEpisode | undefined =
+    merged === undefined
+      ? undefined
+      : {
+          path: merged.metadata.audio,
+          durationMs: merged.metadata.durationMs,
+          chapters: merged.metadata.chapters.length,
+          createdAt: merged.metadata.createdAt,
+          ...(options.audioUrlFor === undefined
+            ? {}
+            : (() => {
+                const url = options.audioUrlFor?.(merged.audioPath)
+                return url === undefined ? {} : { url }
+              })()),
+        }
 
   return {
     projectId,
@@ -123,6 +156,7 @@ export async function projectSnapshot(
       }
       return row
     }),
+    ...(episode === undefined ? {} : { episode }),
     warnings: state.warnings.slice(0, 5),
     warningCount: state.warnings.length,
     stateUpdatedAt,
