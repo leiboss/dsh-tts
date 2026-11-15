@@ -30,6 +30,12 @@ export const Config = z.object({
     llmModel: z.string().default('deepseek-chat').description('Model name recorded in the manifest.'),
     trustedHosts: z.array(z.string()).description('Extra Host names accepted by the audio route (reverse proxies).'),
     chapterChars: z.number().default(1400).description('Target characters per chapter when planning without a model.'),
+    pronunciations: z
+        .dict(z.string())
+        .description('Literal phrase → spoken form applied before synthesis, e.g. {"OpenAI": "Open A I"}.'),
+    voiceOverrides: z
+        .dict(z.string())
+        .description('Per-chapter voice overrides, e.g. {"ch-03": "zh-CN-YunxiNeural"}.'),
 });
 /** Resolve the project root without requiring DSH_HOME. */
 function resolveOutputDir(config, env) {
@@ -106,6 +112,8 @@ function startRerun(ctx, config, outputDir, projectId, chapters) {
         projectId,
         auditSample: config.auditSample ?? 2,
         ...(chapters === undefined ? {} : { chapters }),
+        ...(config.pronunciations === undefined ? {} : { pronunciations: config.pronunciations }),
+        ...(config.voiceOverrides === undefined ? {} : { voiceOverrides: config.voiceOverrides }),
     });
     inFlight.set(projectId, run);
     void run
@@ -185,6 +193,8 @@ export function createVoiceoverTools(ctx, config, env = process.env) {
                     network: true,
                     auditSample: config.auditSample ?? 2,
                     ...(config.chapterChars === undefined ? {} : { chapterChars: config.chapterChars }),
+                    ...(config.pronunciations === undefined ? {} : { pronunciations: config.pronunciations }),
+                    ...(config.voiceOverrides === undefined ? {} : { voiceOverrides: config.voiceOverrides }),
                 });
                 inFlight.set(projectId, run);
                 void run

@@ -68,6 +68,8 @@ export async function rerunProject(deps, input) {
         auditSample: input.auditSample ?? 2,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
         ...(input.chapters === undefined ? {} : { only: input.chapters }),
+        ...(input.pronunciations === undefined ? {} : { pronunciations: input.pronunciations }),
+        ...(input.voiceOverrides === undefined ? {} : { voiceOverrides: input.voiceOverrides }),
     });
     if (result.projectId !== input.projectId) {
         throw new Error(`Project ${input.projectId} can no longer be resumed: its prompt or settings changed and the key now resolves to ${result.projectId}. Create a new project instead.`);

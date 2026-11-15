@@ -25,6 +25,8 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     llmModel: z<string, string, "defined">;
     trustedHosts: z<string[], string[], "plain">;
     chapterChars: z<number, number, "defined">;
+    pronunciations: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>, "plain">;
+    voiceOverrides: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>, "plain">;
 }>>, Schemastery.ObjectT<NoInfer<{
     outputDir: z<string, string, "plain">;
     defaultVoice: z<string, string, "defined">;
@@ -37,6 +39,8 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     llmModel: z<string, string, "defined">;
     trustedHosts: z<string[], string[], "plain">;
     chapterChars: z<number, number, "defined">;
+    pronunciations: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>, "plain">;
+    voiceOverrides: z<import("@deepseek-ai/cosmokit").Dict<string, string>, import("@deepseek-ai/cosmokit").Dict<string, string>, "plain">;
 }>>, "plain">;
 /** Config accepted by {@link apply}. */
 export interface VoiceoverConfig {
@@ -54,6 +58,10 @@ export interface VoiceoverConfig {
     trustedHosts?: string[];
     /** Target characters per chapter when planning without a model. */
     chapterChars?: number;
+    /** Literal phrase → spoken form, applied before synthesis. */
+    pronunciations?: Record<string, string>;
+    /** Per-chapter voice overrides, e.g. `{ "ch-03": "zh-CN-YunxiNeural" }`. */
+    voiceOverrides?: Record<string, string>;
 }
 /** Tool definitions; separated so tests can inspect them without a host. */
 export declare function createVoiceoverTools(ctx: Context, config: VoiceoverConfig, env?: NodeJS.ProcessEnv): ToolDefinition[];

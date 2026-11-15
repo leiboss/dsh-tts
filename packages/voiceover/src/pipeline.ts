@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { callJson, LlmError, type Completer } from './llm.ts'
 import { adaptPrompt, auditPrompt, chunkPrompt, coverageErrors, outlinePrompt, subtitlePrompt } from './prompts.ts'
 import { alignUnits, formatSrt, splitUnitsFallback, type SubtitleUnit } from './subtitle.ts'
+import { applyPronunciations } from './pronounce.ts'
 import {
   PROMPT_VERSION,
   type Capability,
@@ -60,6 +61,15 @@ export interface ProjectOptions {
   only?: readonly string[]
   /** Target characters per chapter when planning without a model. */
   chapterChars?: number
+  /**
+   * Literal phrase → spoken form, applied to the synthesized text only.
+   *
+   * Subtitle timing falls back to proportional alignment when a rule fires,
+   * because the engine's word offsets describe the substituted text.
+   */
+  pronunciations?: Readonly<Record<string, string>>
+  /** Per-chapter voice, overriding `voice` for the listed chapters. */
+  voiceOverrides?: Readonly<Record<string, string>>
 }
 
 /** Persisted per-project state (never part of the manifest contract). */
@@ -550,6 +560,9 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
       continue
     }
 
+    // A per-chapter voice is a casting decision, not a new project: it is
+    // recorded on the chapter and does not change the project key.
+    const chapterVoice = options.voiceOverrides?.[chapter.id] ?? options.voice
     const record: ChapterRecord = {
       id: chapter.id,
       order: index + 1,
@@ -557,6 +570,7 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
       chars: chapterText.length,
       sourceRange: chapter.sourceRange,
       status: 'queued',
+      ...(chapterVoice === options.voice ? {} : { voice: chapterVoice }),
     }
     const upsert = (next: ChapterRecord): void => {
       const at = state.chapters.findIndex((entry) => entry.id === next.id)
@@ -611,7 +625,23 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
       const scriptPath = paths(projectDir).script(chapter.id)
       await writeFile(scriptPath, `${script}\n`, 'utf8')
 
-      const synthesized = await deps.synth.synthesize({ text: script, voice: options.voice, rate: options.rate, signal: options.signal })
+      // Pronunciation rules change what is spoken, never the stored script: the
+      // engine's word offsets then describe a different text, so timing falls
+      // back to proportional alignment below.
+      const spoken = applyPronunciations(script, options.pronunciations)
+      if (spoken.applied.length > 0) {
+        state.warnings.push(
+          `${chapter.id}: ${spoken.applied.length} pronunciation rule(s) applied (${spoken.applied.join(', ')}); subtitle timing is estimated`,
+        )
+        await persist()
+      }
+
+      const synthesized = await deps.synth.synthesize({
+        text: spoken.text,
+        voice: chapterVoice,
+        rate: options.rate,
+        signal: options.signal,
+      })
       // Record the engine that actually ran, not the one we expected.
       if (synthesized.engine !== undefined) {
         const reported = synthesized.engine
@@ -638,7 +668,11 @@ export async function runProject(deps: PipelineDeps, options: ProjectOptions): P
       await persist()
 
       const segmented = await subtitleUnits(deps, script)
-      const aligned = alignUnits(segmented.units, synthesized.durationMs, synthesized.words)
+      const aligned = alignUnits(
+        segmented.units,
+        synthesized.durationMs,
+        spoken.applied.length > 0 ? undefined : synthesized.words,
+      )
       const subtitlePath = paths(projectDir).subtitles(chapter.id, aligned.quality === 'estimated')
       await writeFile(subtitlePath, formatSrt(aligned.units), 'utf8')
 

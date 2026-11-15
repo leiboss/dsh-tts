@@ -84,6 +84,10 @@ export async function rerunProject(
     signal?: AbortSignal
     /** Restrict the rerun to these chapters; omitted means "every unfinished one". */
     chapters?: readonly string[]
+    /** Pronunciation rules from the live config; they are not part of the project. */
+    pronunciations?: Readonly<Record<string, string>>
+    /** Per-chapter voice overrides from the live config. */
+    voiceOverrides?: Readonly<Record<string, string>>
   },
 ): Promise<RerunResult> {
   const loaded = await loadRerunPlan(input.outputDir, input.projectId)
@@ -101,6 +105,8 @@ export async function rerunProject(
     auditSample: input.auditSample ?? 2,
     ...(input.signal === undefined ? {} : { signal: input.signal }),
     ...(input.chapters === undefined ? {} : { only: input.chapters }),
+    ...(input.pronunciations === undefined ? {} : { pronunciations: input.pronunciations }),
+    ...(input.voiceOverrides === undefined ? {} : { voiceOverrides: input.voiceOverrides }),
   })
 
   if (result.projectId !== input.projectId) {

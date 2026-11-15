@@ -24,6 +24,9 @@ dsh plugin --profile <profile> add @leiboss/dsh-voiceover
 | `llmBaseUrl` | 空 | OpenAI 兼容端点；为空则按原文朗读 |
 | `llmApiKey` | 空 | 端点密钥 |
 | `llmModel` | `deepseek-chat` | 记录进 manifest |
+| `pronunciations` | 空 | 发音替换（字面短语 → 读音），只改合成文本，不改脚本/字幕 |
+| `voiceOverrides` | 空 | 每章音色，如 `{"ch-03": "zh-CN-YunxiNeural"}` |
+| `ffmpegPath` | `ffmpeg` | 成片响度标准化用的二进制 |
 
 ## 用法
 

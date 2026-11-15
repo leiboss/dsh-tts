@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- **Pronunciation dictionary.** The plugin config accepts `pronunciations`, a
+  literal phrase → spoken form map (`"OpenAI": "Open A I"`). Rules apply to the
+  text the engine reads and to nothing else: the stored script and the subtitles
+  keep the readable wording, and the longest key wins so `马克·陈` is not eaten by
+  `马克`. Because the engine's word offsets then describe a different text, a
+  chapter where a rule fired reports `estimated` subtitle timing and records a
+  warning instead of claiming exact alignment.
+- **Per-chapter voices.** `voiceOverrides` maps a chapter id to a voice
+  (`{"ch-03": "zh-CN-YunxiNeural"}`). The chapter record keeps the voice it
+  actually used, and the project key does not change, so different casting is a
+  rerun of the same project rather than a new one.
+
 ## 0.4.1
 
 - **A one-episode RSS feed.** `voiceover_episode({ feedBaseUrl })` writes

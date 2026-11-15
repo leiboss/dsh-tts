@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -161,6 +161,64 @@ test('records every planned chapter and the running stage before the chapter end
     assert.notEqual(duringSynth?.chapters[0]?.status, 'queued', 'the running chapter reports its stage')
     assert.equal(duringSynth?.chapters[1]?.status, 'queued')
     assert.deepEqual(result.state.chapters.map((chapter) => chapter.status), ['done', 'done'])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('pronunciations change what is spoken, not what is stored', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'vo-pronounce-'))
+  try {
+    const spoken: string[] = []
+    const voices: string[] = []
+    const synthesizer: Synthesizer = {
+      async synthesize(request) {
+        spoken.push(request.text)
+        voices.push(request.voice)
+        const filePath = join(await mkdtemp(join(tmpdir(), 'vo-pron-synth-')), 'out.mp3')
+        await writeFile(filePath, Buffer.from('ID3fake'))
+        return {
+          filePath,
+          bytes: 1024,
+          durationMs: 4000,
+          timingQuality: 'exact' as const,
+          format: 'mp3' as const,
+          // Word offsets for the original wording: usable without a substitution,
+          // describing the wrong text once a rule fires.
+          words: [
+            { text: 'OpenAI', offsetMs: 0, durationMs: 800 },
+            { text: '发布了新模型', offsetMs: 800, durationMs: 3000 },
+          ],
+        }
+      },
+    }
+
+    const result = await runProject(
+      { synth: synthesizer },
+      {
+        outputDir: dir,
+        title: '读音',
+        text: 'OpenAI 发布了新模型。',
+        voice: 'zh-CN-XiaoxiaoNeural',
+        rate: '+0%',
+        style: 'news',
+        network: true,
+        pronunciations: { OpenAI: 'Open A I' },
+        voiceOverrides: { 'ch-01': 'zh-CN-YunxiNeural' },
+      },
+    )
+
+    assert.ok(spoken[0]?.includes('Open A I'), 'the engine hears the substituted phrase')
+    assert.equal(voices[0], 'zh-CN-YunxiNeural', 'the chapter voice override reaches the engine')
+    const script = await readFile(join(result.projectDir, 'script', 'ch-01.md'), 'utf8')
+    assert.ok(script.includes('OpenAI'), 'the stored script keeps the readable wording')
+    assert.equal(result.state.chapters[0]?.voice, 'zh-CN-YunxiNeural')
+    assert.equal(
+      result.state.chapters[0]?.subtitles?.timingQuality,
+      'estimated',
+      'word offsets describe the substituted text, so timing must not claim exact',
+    )
+    assert.ok(result.state.warnings.some((warning) => warning.includes('pronunciation rule')))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

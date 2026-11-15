@@ -42,6 +42,8 @@ export interface ChapterRecord {
     chars: number;
     sourceRange: [number, number];
     status: ChapterStatus;
+    /** Voice actually used, recorded when it differs from the project default. */
+    voice?: string;
     script?: {
         path: string;
         hash: string;

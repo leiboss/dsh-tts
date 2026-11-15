@@ -33,6 +33,15 @@ export interface ProjectOptions {
     only?: readonly string[];
     /** Target characters per chapter when planning without a model. */
     chapterChars?: number;
+    /**
+     * Literal phrase → spoken form, applied to the synthesized text only.
+     *
+     * Subtitle timing falls back to proportional alignment when a rule fires,
+     * because the engine's word offsets describe the substituted text.
+     */
+    pronunciations?: Readonly<Record<string, string>>;
+    /** Per-chapter voice, overriding `voice` for the listed chapters. */
+    voiceOverrides?: Readonly<Record<string, string>>;
 }
 /** Persisted per-project state (never part of the manifest contract). */
 export interface ProjectState {
